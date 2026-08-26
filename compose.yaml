@@ -1,0 +1,78 @@
+name: omega
+
+x-omega: &omega
+  image: omega:latest
+  build: .
+  restart: unless-stopped
+  environment:
+    APP_ENV: production
+    APP_HOST: 0.0.0.0
+    APP_PORT: 3000
+    AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET, for example with openssl rand -base64 48}
+    DB_CONNECTION: postgres
+    DB_HOST: postgres
+    DB_PORT: 5432
+    DB_DATABASE: ${POSTGRES_DB:-omega}
+    DB_USERNAME: ${POSTGRES_USER:-omega}
+    DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    DB_SSLMODE: disable
+    STORAGE_ROOT: /storage/app
+    CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  volumes:
+    - files:/storage
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  migrate:
+    <<: *omega
+    restart: "no"
+    command: ["migrate"]
+
+  api:
+    <<: *omega
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *omega
+    command: ["queue:work", "--concurrency", "4"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  scheduler:
+    <<: *omega
+    command: ["schedule:run"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-omega}
+      POSTGRES_USER: ${POSTGRES_USER:-omega}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omega} -d ${POSTGRES_DB:-omega}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres:
+  files:

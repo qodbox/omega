@@ -1,0 +1,2 @@
+root: ${STORAGE_ROOT:-storage/app}
+url: ${STORAGE_URL:-/storage}

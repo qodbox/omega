@@ -1,0 +1,13 @@
+package rules
+
+import (
+	"strings"
+
+	"omega/internal/validation"
+)
+
+func init() {
+	validation.Rule("{{.Var}}", func(value string) bool {
+		return strings.TrimSpace(value) != ""
+	}, "This value does not satisfy the {{.Var}} rule.")
+}

@@ -1,0 +1,17 @@
+package factories
+
+import (
+	"github.com/brianvoe/gofakeit/v7"
+
+	"omega/internal/database"
+)
+
+type {{.Name}}Attributes struct {
+	Name string
+}
+
+var {{.Name}} = database.NewFactory(func(f *gofakeit.Faker) {{.Name}}Attributes {
+	return {{.Name}}Attributes{
+		Name: f.Name(),
+	}
+})

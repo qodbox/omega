@@ -1,0 +1,40 @@
+# Database connections.
+#
+# `default` picks which one the application opens at boot; the others stay
+# available through omega.Connection("name").
+default: ${DB_CONNECTION:-sqlite}
+
+log_level: ${DB_LOG_LEVEL:-warn}
+slow_threshold: 200ms
+
+connections:
+  sqlite:
+    driver: sqlite
+    # A file path, not a database name — which is why it has its own variable
+    # rather than sharing DB_DATABASE with the server engines below.
+    database: ${DB_SQLITE_PATH:-database/omega.db}
+
+  postgres:
+    driver: postgres
+    host: ${DB_HOST:-127.0.0.1}
+    port: ${DB_PORT:-5432}
+    database: ${DB_DATABASE:-omega}
+    username: ${DB_USERNAME:-omega}
+    password: ${DB_PASSWORD:-}
+    sslmode: ${DB_SSLMODE:-disable}
+    timezone: ${DB_TIMEZONE:-UTC}
+    max_open_conns: 25
+    max_idle_conns: 5
+    conn_max_lifetime: 1h
+
+  mysql:
+    driver: mysql
+    host: ${DB_HOST:-127.0.0.1}
+    port: ${DB_PORT:-3306}
+    database: ${DB_DATABASE:-omega}
+    username: ${DB_USERNAME:-omega}
+    password: ${DB_PASSWORD:-}
+    charset: utf8mb4
+    max_open_conns: 25
+    max_idle_conns: 5
+    conn_max_lifetime: 1h

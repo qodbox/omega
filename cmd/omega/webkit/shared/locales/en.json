@@ -1,0 +1,121 @@
+{
+  "nav": {
+    "docs": "Docs",
+    "dashboard": "Dashboard",
+    "users": "Users",
+    "rest": "REST",
+    "graphql": "GraphQL",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "language": "Language",
+    "theme": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "menu": "Menu",
+    "skip": "Skip to content"
+  },
+  "home": {
+    "badge": "Go API framework",
+    "title": "Your migrations write the API.",
+    "lead": "Omega reads your database schema at boot and publishes REST, OpenAPI and GraphQL from it. This interface consumes the result.",
+    "readDocs": "Read the docs",
+    "openDemo": "Open the demo",
+    "stack": "The stack",
+    "f1": {
+      "title": "Docs follow your migrations",
+      "body": "Create a table and get its CRUD, its OpenAPI schema and its GraphQL types. Without writing a line."
+    },
+    "f2": {
+      "title": "Authentication, complete",
+      "body": "JWT, single-use revocable refresh tokens, roles, and seven OAuth providers ready to wire."
+    },
+    "f3": {
+      "title": "One typed client",
+      "body": "This interface reads /api/openapi.json. Rename a column and TypeScript tells you what breaks."
+    },
+    "f4": {
+      "title": "One binary, no dependency",
+      "body": "Pure-Go SQLite, Swagger and GraphiQL consoles embedded. The binary stands on its own."
+    }
+  },
+  "auth": {
+    "creating": "Creating…",
+    "email": "Email",
+    "emailPlaceholder": "you@example.com",
+    "hidePassword": "Hide password",
+    "name": "Name",
+    "namePlaceholder": "Your full name",
+    "password": "Password",
+    "passwordPlaceholder": "At least 8 characters",
+    "showPassword": "Show password",
+    "signIn": "Sign in",
+    "signUp": "Create account",
+    "signingIn": "Signing in…",
+    "title": "Sign in to reach the API.",
+    "unreachable": "The server is unreachable."
+  },
+  "users": {
+    "back": "Back to the list",
+    "clear": "Clear the filter",
+    "count": "{{total}} account(s) · page {{page}} of {{last}}",
+    "created": "Created",
+    "description": "Served by GET /api/users, a route nobody wrote.",
+    "email": "Email",
+    "empty": "No account matches.",
+    "emptyHint": "Adjust the filter or create an account.",
+    "filter": "Filter by name…",
+    "identifier": "Identifier",
+    "lead": "Registered accounts, paginated and filtered by the API.",
+    "missing": "Account not found",
+    "missingBody": "This account does not exist or was deleted.",
+    "name": "Name",
+    "next": "Next",
+    "no": "no",
+    "notFound": "This account does not exist.",
+    "notFoundHint": "It may have been deleted, or the identifier is wrong.",
+    "page": "Page {page} of {total}",
+    "previous": "Previous",
+    "role": "Role",
+    "title": "Users",
+    "verified": "Email verified"
+  },
+  "dashboard": {
+    "admins": "Administrators",
+    "documentation": "Documentation",
+    "empty": "No account yet.",
+    "platform": "Platform",
+    "recent": "Latest accounts",
+    "resources": "Resources",
+    "title": "Dashboard",
+    "totalUsers": "Accounts",
+    "verified": "Verified emails"
+  },
+  "errors": {
+    "validation": "Please check the form",
+    "unauthorized": "Your session has expired",
+    "forbidden": "You may not do that",
+    "notFound": "Nothing found here",
+    "tooMany": "Too many requests, slow down",
+    "server": "The server failed",
+    "unreachable": "The server is unreachable",
+    "signedIn": "Welcome back",
+    "signedOut": "Signed out",
+    "accountCreated": "Account created",
+    "credentials": "Wrong email or password"
+  },
+  "notFound": {
+    "title": "This page does not exist.",
+    "body": "The link may be outdated, or the address was mistyped.",
+    "home": "Back to the home page"
+  },
+  "crash": {
+    "title": "Something broke.",
+    "body": "The interface hit an unexpected error. Reloading usually clears it.",
+    "reload": "Reload"
+  },
+  "docs": {
+    "search": "Search the docs…",
+    "browse": "Browse every page of the documentation."
+  }
+}

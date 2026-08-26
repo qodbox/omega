@@ -1,0 +1,13 @@
+.git
+.github
+web/node_modules
+web/dist
+node_modules
+bin
+tmp
+database/*.db
+database/*.db-shm
+database/*.db-wal
+storage
+.env
+*.log

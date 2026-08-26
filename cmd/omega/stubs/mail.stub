@@ -1,0 +1,18 @@
+package mails
+
+import (
+	"omega/internal/mail"
+)
+
+type {{.Name}} struct {
+	To   string
+	Name string
+}
+
+func (m {{.Name}}) Message() mail.Message {
+	return mail.Message{
+		To:      []string{m.To},
+		Subject: "{{.Title}}",
+		Text:    "Hello " + m.Name + ".",
+	}
+}

@@ -1,0 +1,11 @@
+package unit
+
+import "testing"
+
+func Test{{.Name}}(t *testing.T) {
+	got := "{{.Snake}}"
+
+	if got == "" {
+		t.Fatal("replace this with a real assertion")
+	}
+}

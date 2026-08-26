@@ -1,0 +1,18 @@
+package seeds
+
+import (
+	"gorm.io/gorm"
+
+	"omega/internal/database"
+)
+
+func init() {
+	database.RegisterSeeder(database.SeederFunc{
+		SeederName: "{{.Name}}Seed",
+		Fn:         seed{{.Name}},
+	}, 100)
+}
+
+func seed{{.Name}}(db *gorm.DB) error {
+	return nil
+}

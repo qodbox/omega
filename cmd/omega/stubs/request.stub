@@ -1,0 +1,5 @@
+package {{.Package}}
+
+type Payload struct {
+	Name string `json:"name" validate:"required,max=120"`
+}

@@ -1,0 +1,31 @@
+package migrations
+
+import (
+	"time"
+
+	"github.com/go-gormigrate/gormigrate/v2"
+	"gorm.io/gorm"
+
+	"omega/internal/database"
+)
+
+type {{.Var}}Table struct {
+	ID        uint `gorm:"primarykey"`
+	Name      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func ({{.Var}}Table) TableName() string { return "{{.Plural}}" }
+
+func init() {
+	database.Register(&gormigrate.Migration{
+		ID: "{{.Timestamp}}_create_{{.Plural}}_table",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&{{.Var}}Table{})
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return tx.Migrator().DropTable("{{.Plural}}")
+		},
+	})
+}

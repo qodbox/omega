@@ -1,0 +1,121 @@
+{
+  "nav": {
+    "docs": "Documentation",
+    "dashboard": "Tableau de bord",
+    "users": "Utilisateurs",
+    "rest": "REST",
+    "graphql": "GraphQL",
+    "signIn": "Se connecter",
+    "signOut": "Se déconnecter",
+    "language": "Langue",
+    "theme": "Thème",
+    "light": "Clair",
+    "dark": "Sombre",
+    "system": "Système",
+    "menu": "Menu",
+    "skip": "Aller au contenu"
+  },
+  "home": {
+    "badge": "Framework Go pour API",
+    "title": "Vos migrations écrivent l'API.",
+    "lead": "Omega lit le schéma de votre base au démarrage et en publie REST, OpenAPI et GraphQL. Cette interface en consomme le résultat.",
+    "readDocs": "Lire la documentation",
+    "openDemo": "Voir la démo",
+    "stack": "La pile",
+    "f1": {
+      "title": "La doc suit vos migrations",
+      "body": "Créez une table et obtenez son CRUD, son schéma OpenAPI et ses types GraphQL. Sans écrire une ligne."
+    },
+    "f2": {
+      "title": "Authentification complète",
+      "body": "JWT, refresh tokens révocables à usage unique, rôles, et sept providers OAuth prêts à brancher."
+    },
+    "f3": {
+      "title": "Un client typé",
+      "body": "Cette interface lit /api/openapi.json. Renommez une colonne et TypeScript vous dit ce qui casse."
+    },
+    "f4": {
+      "title": "Un binaire, zéro dépendance",
+      "body": "SQLite en Go pur, consoles Swagger et GraphiQL embarquées. Le binaire se suffit à lui-même."
+    }
+  },
+  "auth": {
+    "creating": "Création…",
+    "email": "Email",
+    "emailPlaceholder": "vous@exemple.com",
+    "hidePassword": "Masquer le mot de passe",
+    "name": "Nom",
+    "namePlaceholder": "Votre nom complet",
+    "password": "Mot de passe",
+    "passwordPlaceholder": "Au moins 8 caracteres",
+    "showPassword": "Afficher le mot de passe",
+    "signIn": "Se connecter",
+    "signUp": "Créer un compte",
+    "signingIn": "Connexion…",
+    "title": "Connectez-vous pour atteindre l'API.",
+    "unreachable": "Le serveur est injoignable."
+  },
+  "users": {
+    "back": "Retour à la liste",
+    "clear": "Effacer le filtre",
+    "count": "{{total}} compte(s) · page {{page}} sur {{last}}",
+    "created": "Créé le",
+    "description": "Servi par GET /api/users, une route que personne n'a écrite.",
+    "email": "Email",
+    "empty": "Aucun compte ne correspond.",
+    "emptyHint": "Ajustez le filtre ou créez un compte.",
+    "filter": "Filtrer par nom…",
+    "identifier": "Identifiant",
+    "lead": "Les comptes enregistres, pagines et filtres par l'API.",
+    "missing": "Compte introuvable",
+    "missingBody": "Ce compte n'existe pas ou a ete supprime.",
+    "name": "Nom",
+    "next": "Suivant",
+    "no": "non",
+    "notFound": "Ce compte n'existe pas.",
+    "notFoundHint": "Il a peut-être été supprimé, ou l'identifiant est erroné.",
+    "page": "Page {page} sur {total}",
+    "previous": "Précédent",
+    "role": "Rôle",
+    "title": "Utilisateurs",
+    "verified": "Email vérifié"
+  },
+  "dashboard": {
+    "admins": "Administrateurs",
+    "documentation": "Documentation",
+    "empty": "Aucun compte pour le moment.",
+    "platform": "Plateforme",
+    "recent": "Derniers comptes",
+    "resources": "Ressources",
+    "title": "Tableau de bord",
+    "totalUsers": "Comptes",
+    "verified": "Emails vérifiés"
+  },
+  "errors": {
+    "validation": "Vérifiez le formulaire",
+    "unauthorized": "Votre session a expiré",
+    "forbidden": "Vous n'avez pas le droit",
+    "notFound": "Rien ici",
+    "tooMany": "Trop de requêtes, ralentissez",
+    "server": "Le serveur a échoué",
+    "unreachable": "Le serveur est injoignable",
+    "signedIn": "Bon retour",
+    "signedOut": "Déconnecté",
+    "accountCreated": "Compte créé",
+    "credentials": "Email ou mot de passe incorrect"
+  },
+  "notFound": {
+    "title": "Cette page n'existe pas.",
+    "body": "Le lien est peut-être périmé, ou l'adresse a été mal saisie.",
+    "home": "Retour à l'accueil"
+  },
+  "crash": {
+    "title": "Quelque chose a cassé.",
+    "body": "L'interface a rencontré une erreur inattendue. Recharger suffit en général.",
+    "reload": "Recharger"
+  },
+  "docs": {
+    "search": "Rechercher dans la doc…",
+    "browse": "Parcourir toutes les pages de la documentation."
+  }
+}

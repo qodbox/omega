@@ -1,0 +1,31 @@
+package {{.Package}}
+
+import (
+	"time"
+
+	"omega/app/models"
+)
+
+type View struct {
+	ID        uint      `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func NewView(record *models.{{.Name}}) View {
+	return View{
+		ID:        record.ID,
+		Name:      record.Name,
+		CreatedAt: record.CreatedAt,
+		UpdatedAt: record.UpdatedAt,
+	}
+}
+
+func NewViews(records []models.{{.Name}}) []View {
+	views := make([]View, 0, len(records))
+	for index := range records {
+		views = append(views, NewView(&records[index]))
+	}
+	return views
+}

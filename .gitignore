@@ -1,0 +1,22 @@
+# Environment
+.env
+
+# Build artefacts
+/bin/
+/tmp/
+coverage.out
+
+# SQLite databases
+/database/*.db
+*.db-shm
+*.db-wal
+
+# Dependencies
+/.claude/
+
+# Frontend
+node_modules/
+/web/.nuxt/
+/web/.output/
+/web/dist/
+/web/.next/

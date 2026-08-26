@@ -1,0 +1,505 @@
+{
+  "docs": {
+    "title": "Documentación",
+    "search": "Buscar en la documentación…",
+    "noResult": "Sin resultados.",
+    "browse": "Explorar la documentación"
+  },
+  "docSection": {
+    "start": "Empezar",
+    "cli": "Línea de comandos",
+    "api": "La API",
+    "services": "Servicios",
+    "frontend": "Interfaz"
+  },
+  "doc": {
+    "installation": {
+      "title": "Instalación",
+      "lead": "Omega solo necesita Go. Bun únicamente hace falta para esta interfaz.",
+      "b0": {
+        "heading": "Arrancar la API"
+      },
+      "b1": {
+        "heading": "AUTH_SECRET no tiene valor por defecto",
+        "body": "El servidor se niega a arrancar sin él, en lugar de firmar los tokens con una clave adivinable."
+      },
+      "b2": {
+        "heading": "Arrancar esta interfaz"
+      },
+      "b3": {
+        "heading": "Lo que se sirve",
+        "c0": "Dirección",
+        "c1": "Qué es",
+        "r0c1": "Swagger UI, incrustado en el binario",
+        "r1c1": "GraphiQL con su Explorer",
+        "r2c1": "el documento del que esta interfaz saca sus tipos",
+        "r3c1": "esta interfaz"
+      },
+      "b4": {
+        "heading": "El puerto se libera solo",
+        "body": "Si el puerto configurado está ocupado, Omega toma el siguiente y lo dice en el registro: warn port taken, moved to the next free one using=3301 wanted=3300"
+      }
+    },
+    "structure": {
+      "title": "Estructura del proyecto",
+      "lead": "Dónde vive cada tipo de código, y la regla que mantiene el conjunto honesto.",
+      "b1": {
+        "heading": "La regla",
+        "body": "El código de aplicación nunca importa internal/ directamente — todo pasa por la fachada omega. La única excepción es internal/validation, cuya forma de error forma parte del contrato público."
+      },
+      "b2": {
+        "heading": "El camino de una petición",
+        "c0": "Paso",
+        "c1": "Dónde",
+        "r0c1": "internal/validation.Bind",
+        "r1c1": "app/services",
+        "r2c1": "GORM, dentro del servicio",
+        "r3c1": "omega.Emit, luego un listener o un job",
+        "r4c1": "app/presenters",
+        "r5c1": "app/controllers"
+      }
+    },
+    "configuration": {
+      "title": "Configuración",
+      "lead": "Cada archivo de config/ queda bajo el espacio de su nombre base.",
+      "b1": {
+        "heading": "Las variables que importan",
+        "c0": "Variable",
+        "c1": "Qué hace",
+        "r0c1": "firma los JWT — obligatoria, sin valor por defecto",
+        "r1c1": "duración del token de acceso, 15m por defecto",
+        "r2c1": "duración del refresh token, 720h por defecto",
+        "r3c1": "el puerto deseado, 3000 por defecto",
+        "r4c1": "cuántos puertos probar, 20 por defecto",
+        "r5c1": "el archivo SQLite, database/omega.db por defecto",
+        "r6c1": "sqlite · postgres · mysql",
+        "r7c1": "quién puede llamar a la API desde un navegador"
+      },
+      "b2": {
+        "heading": "Los servicios",
+        "c0": "Variable",
+        "c1": "Qué hace",
+        "r0c1": "jobs procesados en paralelo, 4 por defecto",
+        "r1c1": "espera cuando la cola está vacía, 1s por defecto",
+        "r2c1": "cuándo se recupera un job reservado, 5m por defecto",
+        "r3c1": "log o smtp — log por defecto, no se envía nada",
+        "r4c1": "el servidor SMTP",
+        "r5c1": "dónde aterrizan los archivos, storage/app por defecto",
+        "r6c1": "el prefijo público, /storage por defecto",
+        "r7c1": "peticiones por ventana — 0 lo desactiva",
+        "r8c1": "la ventana, 1m por defecto"
+      },
+      "b3": {
+        "heading": "La interpolación precede al análisis",
+        "body": "${VAR} y ${VAR:-defecto} se sustituyen sobre los bytes YAML antes de que viper los lea. Viper no conoce esa sintaxis; expandir después dejaría las referencias literales."
+      }
+    },
+    "cli-overview": {
+      "title": "Todos los comandos",
+      "lead": "La superficie completa del binario omega.",
+      "b0": {
+        "heading": "Ejecución",
+        "c0": "Comando",
+        "c1": "Qué hace",
+        "r0c1": "arrancar el servidor HTTP",
+        "r1c1": "recompilar y reiniciar en cada cambio, con air",
+        "r2c1": "binario estático, CGO desactivado, compila cruzado",
+        "r3c1": "lanzar la suite, con perfil de cobertura si se pide",
+        "r4c1": "listar las rutas registradas y sus nombres",
+        "r5c1": "servir el Model Context Protocol por stdin/stdout"
+      },
+      "b1": {
+        "heading": "Base de datos",
+        "c0": "Comando",
+        "c1": "Qué hace",
+        "r0c1": "aplicar las migraciones pendientes",
+        "r1c1": "cuáles se aplicaron y cuáles no",
+        "r2c1": "deshacer las N últimas, 1 por defecto",
+        "r3c1": "deshacerlo todo",
+        "r4c1": "borrar todo, migrar, y sembrar si se pide",
+        "r5c1": "lanzar todos los seeders, o los nombrados"
+      },
+      "b2": {
+        "heading": "Cola y planificador",
+        "c0": "Comando",
+        "c1": "Qué hace",
+        "r0c1": "consumir jobs hasta la interrupción",
+        "r1c1": "listar los jobs que se rindieron",
+        "r2c1": "devolver los jobs fallidos a la cola",
+        "r3c1": "borrar jobs de la tabla",
+        "r4c1": "ejecutar las tareas periódicas",
+        "r5c1": "mostrarlas con su próxima ejecución"
+      },
+      "b3": {
+        "heading": "Generadores",
+        "c0": "Comando",
+        "c1": "Qué escribe",
+        "r0c1": "modelo, migración, request, servicio, controlador",
+        "r1c1": "el modelo y su migración de creación",
+        "r2c1": "un controlador; -r añade las cinco acciones CRUD",
+        "r3c1": "la forma que un cliente puede enviar",
+        "r4c1": "donde vive la lógica",
+        "r5c1": "una migración vacía",
+        "r6c1": "un seeder",
+        "r7c1": "una factory para pruebas y seeds",
+        "r8c1": "un middleware de Fiber",
+        "r9c1": "un job de la cola",
+        "r10c1": "un listener de eventos"
+      },
+      "b4": {
+        "heading": "Todo generador acepta --force",
+        "body": "Sin él, un archivo existente nunca se sobrescribe — el generador se detiene y te lo dice."
+      }
+    },
+    "cli-serve": {
+      "title": "serve, dev, build",
+      "lead": "Las tres formas de ejecutar la aplicación.",
+      "b0": {
+        "heading": "serve"
+      },
+      "b1": {
+        "body": "Si el puerto está ocupado, Omega toma el siguiente en lugar de fallar. Lo dice en el registro, porque un servidor que se mueve en silencio es una trampa."
+      },
+      "b2": {
+        "heading": "dev"
+      },
+      "b3": {
+        "heading": "build"
+      },
+      "b4": {
+        "heading": "Un binario instalado lleva sus propias migraciones",
+        "body": "Las migraciones se registran con init(), así que van compiladas dentro. Tras make:model, ejecuta go run ./cmd/omega migrate — o vuelve a hacer go install ./cmd/omega."
+      }
+    },
+    "cli-make": {
+      "title": "Los generadores",
+      "lead": "Un generador escribe la rebanada vertical, nunca las rutas — esas pertenecen a un archivo que es tuyo.",
+      "b0": {
+        "heading": "Toda la rebanada de una vez"
+      },
+      "b1": {
+        "heading": "Cómo queda el controlador"
+      },
+      "b2": {
+        "body": "Analizar, llamar, responder. Sin validación en if, sin llamada a GORM, sin dar forma a la respuesta. Las reglas viven en app/requests como tags; la lógica vive en app/services y recibe un context.Context, así que se prueba sin petición HTTP."
+      },
+      "b3": {
+        "heading": "Luego pega las rutas que imprime"
+      },
+      "b4": {
+        "heading": "O no escribas ningún controlador",
+        "body": "api.Register[models.Article](registry, \"articles\", \"article\") publica las cinco rutas REST, la descripción OpenAPI y los tipos GraphQL en una línea."
+      }
+    },
+    "cli-migrate": {
+      "title": "Las migraciones",
+      "lead": "Cada migración lleva su propia marcha atrás. Nada se adivina.",
+      "b1": {
+        "heading": "Un ciclo completo"
+      },
+      "b2": {
+        "body": "El identificador es el nombre del archivo, así que las migraciones corren en orden de creación. La documentación sigue: una tabla añadida por una migración queda descrita en OpenAPI y GraphQL en el siguiente arranque, sin escribir código."
+      }
+    },
+    "resources": {
+      "title": "Recursos automáticos",
+      "lead": "Omega lee el esquema vivo al arrancar y publica un recurso por tabla.",
+      "b0": {
+        "heading": "Basta con una tabla"
+      },
+      "b1": {
+        "heading": "Lo que viene gratis",
+        "c0": "Parámetro",
+        "c1": "Efecto",
+        "r0c1": "paginación, con tope de 200 filas",
+        "r1c1": "orden, el signo menos para descendente",
+        "r2c1": "filtro exacto sobre cualquier columna visible",
+        "r3c1": "también __gt __gte __lt __lte __ne __in"
+      },
+      "b2": {
+        "heading": "Una columna oculta tampoco es filtrable",
+        "body": "Responder «ninguna fila» o «una fila» a ?password=x convertiría la lista en un oráculo. Las columnas llamadas password, secret, *_token, *_hash y *_key quedan ocultas por convención, igual que las tablas internas."
+      },
+      "b3": {
+        "heading": "Un límite honesto",
+        "body": "SQLite declara los booleanos como numeric, indistinguible de un decimal, así que una columna booleana descubierta se tipa como number. En PostgreSQL y MySQL el tipo es exacto. Declarar el modelo con api.Register da el tipo correcto en todas partes."
+      }
+    },
+    "authentication": {
+      "title": "Autenticación",
+      "lead": "Tokens de acceso cortos y sin estado, refresh tokens de un solo uso y revocables.",
+      "b0": {
+        "heading": "Las rutas",
+        "c0": "Ruta",
+        "c1": "Qué hace",
+        "r0c1": "crear una cuenta, devuelve un par de tokens",
+        "r1c1": "cambiar credenciales por un par de tokens",
+        "r2c1": "gastar un refresh token y obtener uno nuevo",
+        "r3c1": "retirar el refresh token",
+        "r4c1": "el portador del token",
+        "r5c1": "cambiarla, cerrando las demás sesiones",
+        "r6c1": "iniciar una conexión OAuth"
+      },
+      "b1": {
+        "heading": "Un refresh token es de un solo uso",
+        "body": "Reproducir uno ya gastado se rechaza. Eso es lo que hace ruidoso un robo en lugar de silencioso."
+      },
+      "b2": {
+        "heading": "Proveedores OAuth"
+      },
+      "b3": {
+        "heading": "Proteger una ruta"
+      }
+    },
+    "validation": {
+      "title": "Validación",
+      "lead": "Las reglas viven en tags. Un fallo siempre tiene la misma forma.",
+      "b0": {
+        "heading": "El request"
+      },
+      "b1": {
+        "heading": "El controlador"
+      },
+      "b2": {
+        "heading": "Lo que recibe el cliente"
+      },
+      "b3": {
+        "heading": "El nombre del campo es el nombre JSON",
+        "body": "A un cliente que envió new_password se le habla de new_password, no de NewPassword."
+      }
+    },
+    "graphql": {
+      "title": "GraphQL",
+      "lead": "El mismo registro que sirve REST construye el esquema.",
+      "b0": {
+        "heading": "Consultas y mutaciones, por recurso"
+      },
+      "b1": {
+        "heading": "La introspección está abierta, los datos no",
+        "body": "Una consulta que solo pide __schema no necesita token, para que la consola pueda dibujar el esquema antes de iniciar sesión. Mezcla un campo real y toda la petición exige token — la comprobación analiza la consulta en lugar de buscar __schema en el texto."
+      },
+      "b2": {
+        "body": "Pon api.public_introspection en false para exigir token incluso para el esquema."
+      }
+    },
+    "queue": {
+      "title": "Colas y jobs",
+      "lead": "La cola vive en tu base de datos, no en Redis. El binario sigue bastándose solo.",
+      "b0": {
+        "heading": "Encolar"
+      },
+      "b1": {
+        "heading": "El handler"
+      },
+      "b2": {
+        "heading": "Lanzar el worker"
+      },
+      "b3": {
+        "heading": "Los comandos",
+        "c0": "Comando",
+        "c1": "Qué hace",
+        "r0c1": "consumir jobs hasta la interrupción",
+        "r1c1": "listar los jobs que agotaron sus intentos",
+        "r2c1": "devolver uno, o todos los fallidos",
+        "r3c1": "borrar jobs de la tabla",
+        "r4c1": "generar un job"
+      },
+      "b4": {
+        "heading": "Un worker muerto no pierde nada",
+        "body": "Un job se reserva con una actualización atómica, así que dos workers nunca toman el mismo. Si un worker muere a mitad, la fila sigue reservada hasta stuck_after y luego otro worker la recupera."
+      },
+      "b5": {
+        "heading": "Los reintentos",
+        "body": "Un job que falla se reprograma con retroceso exponencial con tope de diez minutos: 2s, 4s, 8s… Pasado MaxTries queda como failed y espera a queue:retry. Un pánico dentro de un handler se captura y cuenta como fallo, en vez de tumbar al worker."
+      }
+    },
+    "events": {
+      "title": "Eventos y planificador",
+      "lead": "Un bus en proceso, y tareas periódicas sin crontab.",
+      "b0": {
+        "heading": "Escuchar"
+      },
+      "b1": {
+        "heading": "Emitir"
+      },
+      "b2": {
+        "heading": "Síncrono o diferido",
+        "body": "Listen corre dentro de la petición y puede abortarla devolviendo un error. ListenAsync corre en su propia goroutine, con un contexto separado de la petición, así que un listener lento nunca retrasa la respuesta."
+      },
+      "b3": {
+        "heading": "Planificar"
+      },
+      "b4": {
+        "heading": "Ejecutarlo"
+      },
+      "b5": {
+        "body": "Una tarea que sigue corriendo cuando llega su turno se salta en lugar de lanzarse dos veces. Los pánicos se capturan y se registran, nunca son fatales."
+      }
+    },
+    "cache-storage-mail": {
+      "title": "Caché, almacenamiento, correo",
+      "lead": "Tres servicios pequeños sin ninguna dependencia externa.",
+      "b0": {
+        "heading": "Caché"
+      },
+      "b1": {
+        "body": "En memoria, con un TTL y un barrido que retira las entradas caducadas cada minuto. Remember es genérico: el tipo que devuelves es el que recuperas."
+      },
+      "b2": {
+        "heading": "Almacenamiento"
+      },
+      "b3": {
+        "heading": "Las rutas no pueden escapar",
+        "body": "Cada nombre se resuelve desde la raíz y queda confinado dentro — ../../etc/passwd aterriza en raíz/etc/passwd, nunca en el sistema de archivos real."
+      },
+      "b4": {
+        "heading": "Correo"
+      },
+      "b5": {
+        "heading": "Drivers",
+        "c0": "MAIL_DRIVER",
+        "c1": "Comportamiento",
+        "r0c1": "no se envía nada, el mensaje se registra — el defecto",
+        "r1c1": "envío real, STARTTLS cuando el servidor lo ofrece"
+      }
+    },
+    "realtime": {
+      "title": "Tiempo real y métricas",
+      "lead": "Eventos del servidor, WebSocket, límite de peticiones y métricas Prometheus por ruta.",
+      "b0": {
+        "heading": "Publicar"
+      },
+      "b1": {
+        "heading": "Suscribirse desde el navegador"
+      },
+      "b2": {
+        "body": "Un suscriptor sin canal lo recibe todo. El flujo envía un comentario cada 25 segundos para que un proxy no cierre una conexión inactiva, y a un cliente lento se le salta en lugar de dejar que bloquee al emisor."
+      },
+      "b3": {
+        "heading": "Observabilidad",
+        "c0": "Ruta",
+        "c1": "Qué devuelve",
+        "r0c1": "formato de texto Prometheus",
+        "r1c1": "las mismas cifras en JSON"
+      },
+      "b4": {
+        "heading": "Lo que se mide"
+      },
+      "b5": {
+        "heading": "Agrupado por patrón de ruta",
+        "body": "/api/users/1 y /api/users/2 cuentan bajo /api/users/:id, así la métrica sigue siendo legible en lugar de estallar en una serie por identificador."
+      },
+      "b6": {
+        "heading": "Límite de peticiones"
+      }
+    },
+    "frontend-setup": {
+      "title": "Montaje de la interfaz",
+      "lead": "Cómo se construyó esta interfaz, paso a paso.",
+      "b0": {
+        "heading": "1. Vite, React y Tailwind"
+      },
+      "b1": {
+        "heading": "2. El alias y el proxy"
+      },
+      "b2": {
+        "body": "El proxy es la razón de que en desarrollo no haga falta CORS: el navegador solo habla con :5173. El CORS sí importa en producción, donde ambos se sirven desde orígenes distintos."
+      },
+      "b3": {
+        "heading": "3. shadcn/ui"
+      },
+      "b4": {
+        "heading": "shadcn no es una dependencia",
+        "body": "El comando copia los archivos fuente de los componentes en src/components/ui. Son tuyos: edítalos, ninguna actualización los sobrescribirá."
+      },
+      "b5": {
+        "heading": "4. El CORS, del lado Go"
+      }
+    },
+    "typed-client": {
+      "title": "El cliente tipado",
+      "lead": "Esta interfaz no adivina la forma de la API — la lee.",
+      "b0": {
+        "heading": "Generar los tipos"
+      },
+      "b1": {
+        "heading": "Usarlos"
+      },
+      "b2": {
+        "heading": "El refresco que nadie ve"
+      },
+      "b3": {
+        "body": "Un token de acceso caducado es el caso normal, no un fallo: se rota una vez y se repite la petición. Solo un refresh token también muerto termina la sesión. Hay una sola rotación en vuelo a la vez, aunque fallen diez peticiones juntas."
+      }
+    },
+    "i18n": {
+      "title": "Internacionalización",
+      "lead": "Tres idiomas, detectados desde el navegador, recordados en localStorage.",
+      "b0": {
+        "heading": "1. Instalar"
+      },
+      "b1": {
+        "heading": "2. Configurar"
+      },
+      "b2": {
+        "heading": "3. Los archivos de traducción"
+      },
+      "b3": {
+        "heading": "4. Usarlo"
+      },
+      "b4": {
+        "heading": "5. El selector"
+      },
+      "b5": {
+        "heading": "Importa la configuración una vez",
+        "body": "import \"@/lib/i18n\" al principio de App.tsx. El efecto secundario inicializa i18next antes del primer render."
+      }
+    },
+    "theming": {
+      "title": "Modo claro y oscuro",
+      "lead": "Los temas de shadcn usan variables CSS, así que cambiar es una clase en la raíz.",
+      "b0": {
+        "heading": "1. Instalar"
+      },
+      "b1": {
+        "heading": "2. Envolver la aplicación"
+      },
+      "b2": {
+        "body": "attribute=\"class\" pone .dark en <html>. Tailwind lo lee, y cada componente shadcn lo sigue, porque sus colores son variables CSS y no valores fijos."
+      },
+      "b3": {
+        "heading": "3. El interruptor"
+      },
+      "b4": {
+        "heading": "4. El icono que gira"
+      },
+      "b5": {
+        "heading": "disableTransitionOnChange importa",
+        "body": "Sin él, todos los colores de la página se animan a la vez al cambiar, lo que se lee como un destello y no como una transición."
+      }
+    },
+    "dashboard": {
+      "title": "El panel",
+      "lead": "La sidebar de shadcn, plegable a iconos, con un estado que persiste.",
+      "b0": {
+        "heading": "La maquetación"
+      },
+      "b1": {
+        "heading": "Una entrada de menú"
+      },
+      "b2": {
+        "body": "collapsible=\"icon\" reduce la sidebar a sus iconos en lugar de ocultarla; la propiedad tooltip es lo que la mantiene usable en ese estado. SidebarRail aporta el tirador del borde."
+      },
+      "b3": {
+        "heading": "Las piezas",
+        "c0": "Componente",
+        "c1": "Papel",
+        "r0c1": "guarda el estado de apertura en una cookie",
+        "r1c1": "el área de contenido junto a la sidebar",
+        "r2c1": "el botón que la pliega",
+        "r3c1": "el borde que se puede arrastrar",
+        "r4c1": "una sección con título del menú"
+      }
+    }
+  }
+}

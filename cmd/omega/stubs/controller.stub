@@ -1,0 +1,17 @@
+package {{.Package}}
+
+import (
+	"github.com/gofiber/fiber/v2"
+
+	"omega"
+)
+
+type Controller struct{}
+
+func NewController() *Controller {
+	return &Controller{}
+}
+
+func ({{.Var}}c *Controller) Index(c *fiber.Ctx) error {
+	return c.JSON(omega.Map{"data": []any{}})
+}

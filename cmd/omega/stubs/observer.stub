@@ -1,0 +1,24 @@
+package observers
+
+import "gorm.io/gorm"
+
+type {{.Name}} struct{}
+
+func ({{.Var}} {{.Name}}) Register(db *gorm.DB) error {
+	if err := db.Callback().Create().After("gorm:create").
+		Register("observers:{{.Snake}}:created", {{.Var}}.created); err != nil {
+		return err
+	}
+	if err := db.Callback().Update().After("gorm:update").
+		Register("observers:{{.Snake}}:updated", {{.Var}}.updated); err != nil {
+		return err
+	}
+	return db.Callback().Delete().Before("gorm:delete").
+		Register("observers:{{.Snake}}:deleting", {{.Var}}.deleting)
+}
+
+func ({{.Var}} {{.Name}}) created(tx *gorm.DB) {}
+
+func ({{.Var}} {{.Name}}) updated(tx *gorm.DB) {}
+
+func ({{.Var}} {{.Name}}) deleting(tx *gorm.DB) {}

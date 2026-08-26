@@ -1,0 +1,20 @@
+package jobs
+
+import (
+	"context"
+	"encoding/json"
+)
+
+type {{.Name}} struct {
+	ID uint `json:"id"`
+}
+
+func Handle{{.Name}}() func(context.Context, []byte) error {
+	return func(ctx context.Context, payload []byte) error {
+		var input {{.Name}}
+		if err := json.Unmarshal(payload, &input); err != nil {
+			return err
+		}
+		return nil
+	}
+}

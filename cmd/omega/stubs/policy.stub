@@ -1,0 +1,24 @@
+package policies
+
+import (
+	"context"
+
+	"omega/app/models"
+	"omega/internal/policy"
+)
+
+func init() {
+	Extend(func(gate *policy.Registry) {
+		gate.Define("{{.Plural}}.update", func(ctx context.Context, actor, subject any) bool {
+			user, ok := actor.(*models.User)
+			return ok && user.Is(models.RoleAdmin)
+		})
+
+		gate.Define("{{.Plural}}.delete", func(ctx context.Context, actor, subject any) bool {
+			user, ok := actor.(*models.User)
+			return ok && user.Is(models.RoleAdmin)
+		})
+
+		gate.Grant(models.RoleUser, "{{.Plural}}.list", "{{.Plural}}.view")
+	})
+}

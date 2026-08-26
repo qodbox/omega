@@ -1,0 +1,20 @@
+package migrations
+
+import (
+	"github.com/go-gormigrate/gormigrate/v2"
+	"gorm.io/gorm"
+
+	"omega/internal/database"
+)
+
+func init() {
+	database.Register(&gormigrate.Migration{
+		ID: "{{.Timestamp}}_{{.Snake}}",
+		Migrate: func(tx *gorm.DB) error {
+			return nil
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return nil
+		},
+	})
+}

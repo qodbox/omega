@@ -1,0 +1,121 @@
+{
+  "nav": {
+    "docs": "Documentación",
+    "dashboard": "Panel",
+    "users": "Usuarios",
+    "rest": "REST",
+    "graphql": "GraphQL",
+    "signIn": "Iniciar sesión",
+    "signOut": "Cerrar sesión",
+    "language": "Idioma",
+    "theme": "Tema",
+    "light": "Claro",
+    "dark": "Oscuro",
+    "system": "Sistema",
+    "menu": "Menú",
+    "skip": "Ir al contenido"
+  },
+  "home": {
+    "badge": "Framework Go para API",
+    "title": "Tus migraciones escriben la API.",
+    "lead": "Omega lee el esquema de tu base de datos al arrancar y publica REST, OpenAPI y GraphQL a partir de él. Esta interfaz consume el resultado.",
+    "readDocs": "Leer la documentación",
+    "openDemo": "Ver la demo",
+    "stack": "La pila",
+    "f1": {
+      "title": "La documentación sigue tus migraciones",
+      "body": "Crea una tabla y obtén su CRUD, su esquema OpenAPI y sus tipos GraphQL. Sin escribir una línea."
+    },
+    "f2": {
+      "title": "Autenticación completa",
+      "body": "JWT, refresh tokens revocables de un solo uso, roles y siete proveedores OAuth listos para conectar."
+    },
+    "f3": {
+      "title": "Un cliente tipado",
+      "body": "Esta interfaz lee /api/openapi.json. Renombra una columna y TypeScript te dice qué se rompe."
+    },
+    "f4": {
+      "title": "Un binario, cero dependencias",
+      "body": "SQLite en Go puro, consolas Swagger y GraphiQL integradas. El binario se basta a sí mismo."
+    }
+  },
+  "auth": {
+    "creating": "Creando…",
+    "email": "Correo",
+    "emailPlaceholder": "tu@ejemplo.com",
+    "hidePassword": "Ocultar la contrasena",
+    "name": "Nombre",
+    "namePlaceholder": "Tu nombre completo",
+    "password": "Contraseña",
+    "passwordPlaceholder": "Al menos 8 caracteres",
+    "showPassword": "Mostrar la contrasena",
+    "signIn": "Iniciar sesión",
+    "signUp": "Crear cuenta",
+    "signingIn": "Iniciando…",
+    "title": "Inicia sesión para acceder a la API.",
+    "unreachable": "El servidor no responde."
+  },
+  "users": {
+    "back": "Volver a la lista",
+    "clear": "Borrar el filtro",
+    "count": "{{total}} cuenta(s) · página {{page}} de {{last}}",
+    "created": "Creado",
+    "description": "Servido por GET /api/users, una ruta que nadie escribió.",
+    "email": "Correo",
+    "empty": "Ninguna cuenta coincide.",
+    "emptyHint": "Ajusta el filtro o crea una cuenta.",
+    "filter": "Filtrar por nombre…",
+    "identifier": "Identificador",
+    "lead": "Cuentas registradas, paginadas y filtradas por la API.",
+    "missing": "Cuenta no encontrada",
+    "missingBody": "Esta cuenta no existe o fue eliminada.",
+    "name": "Nombre",
+    "next": "Siguiente",
+    "no": "no",
+    "notFound": "Esta cuenta no existe.",
+    "notFoundHint": "Puede que se haya eliminado, o el identificador es incorrecto.",
+    "page": "Pagina {page} de {total}",
+    "previous": "Anterior",
+    "role": "Rol",
+    "title": "Usuarios",
+    "verified": "Correo verificado"
+  },
+  "dashboard": {
+    "admins": "Administradores",
+    "documentation": "Documentación",
+    "empty": "Aun no hay cuentas.",
+    "platform": "Plataforma",
+    "recent": "Últimas cuentas",
+    "resources": "Recursos",
+    "title": "Panel",
+    "totalUsers": "Cuentas",
+    "verified": "Correos verificados"
+  },
+  "errors": {
+    "validation": "Revisa el formulario",
+    "unauthorized": "Tu sesión ha expirado",
+    "forbidden": "No tienes permiso",
+    "notFound": "Nada por aquí",
+    "tooMany": "Demasiadas peticiones, más despacio",
+    "server": "El servidor falló",
+    "unreachable": "El servidor no responde",
+    "signedIn": "Bienvenido de nuevo",
+    "signedOut": "Sesión cerrada",
+    "accountCreated": "Cuenta creada",
+    "credentials": "Correo o contraseña incorrectos"
+  },
+  "notFound": {
+    "title": "Esta página no existe.",
+    "body": "Puede que el enlace esté obsoleto, o la dirección esté mal escrita.",
+    "home": "Volver al inicio"
+  },
+  "crash": {
+    "title": "Algo se rompió.",
+    "body": "La interfaz encontró un error inesperado. Recargar suele bastar.",
+    "reload": "Recargar"
+  },
+  "docs": {
+    "search": "Buscar en la documentación…",
+    "browse": "Explora todas las páginas de la documentación."
+  }
+}

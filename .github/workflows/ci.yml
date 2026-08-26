@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AUTH_SECRET: an-integration-secret-long-enough-to-sign
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Formatting
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^web/' || true)
+          if [ -n "$unformatted" ]; then
+            echo "these files are not formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Tests
+        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic -coverpkg=./...
+
+      - name: Coverage
+        run: go tool cover -func=coverage.out | tail -1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  postgres:
+    name: Go on PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: omega
+          POSTGRES_USER: omega
+          POSTGRES_PASSWORD: secret
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U omega"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DB_CONNECTION: postgres
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: omega
+      DB_USERNAME: omega
+      DB_PASSWORD: secret
+      DB_SSLMODE: disable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Migrate
+        run: go run ./cmd/omega migrate
+
+      - name: Migrations roll back
+        run: |
+          go run ./cmd/omega migrate:reset
+          go run ./cmd/omega migrate
+
+  web:
+    name: Interface (${{ matrix.stack }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [nuxt, react, next]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Scaffold the frontend
+        run: go run ./cmd/omega web:${{ matrix.stack }}
+
+      - name: Install
+        working-directory: web
+        run: bun install
+
+      - name: Lint
+        working-directory: web
+        run: bun run lint
+
+      - name: Build
+        working-directory: web
+        run: bun run build
+
+  docker:
+    name: Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: omega:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: The image boots and answers
+        run: |
+          docker run -d --name omega \
+            -p 3000:3000 \
+            -e AUTH_SECRET="$AUTH_SECRET" \
+            omega:ci serve
+          for attempt in $(seq 1 20); do
+            if curl -sf http://127.0.0.1:3000/api/health > /dev/null; then
+              echo "the API answered after $attempt attempt(s)"
+              docker rm -f omega
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs omega
+          exit 1
+
+      - name: Image size
+        run: docker images omega:ci --format '{{.Size}}'

@@ -1,0 +1,21 @@
+package {{.Package}}
+
+import (
+	"context"
+
+	"gorm.io/gorm"
+)
+
+type Service struct {
+	db *gorm.DB
+}
+
+func NewService(db *gorm.DB) *Service {
+	return &Service{db: db}
+}
+
+func (s *Service) Count(ctx context.Context) (int64, error) {
+	var total int64
+	err := s.db.WithContext(ctx).Table("{{.Plural}}").Count(&total).Error
+	return total, err
+}

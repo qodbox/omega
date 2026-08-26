@@ -1,0 +1,4 @@
+queues: ${QUEUE_NAMES:-default}
+concurrency: ${QUEUE_CONCURRENCY:-4}
+poll: ${QUEUE_POLL:-1s}
+stuck_after: ${QUEUE_STUCK_AFTER:-5m}

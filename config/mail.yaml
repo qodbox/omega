@@ -1,0 +1,6 @@
+driver: ${MAIL_DRIVER:-log}
+host: ${MAIL_HOST:-127.0.0.1}
+port: ${MAIL_PORT:-1025}
+username: ${MAIL_USERNAME:-}
+password: ${MAIL_PASSWORD:-}
+from: ${MAIL_FROM:-omega@localhost}

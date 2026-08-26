@@ -1,0 +1,50 @@
+# Application settings.
+#
+# ${VAR:-fallback} is expanded from the environment before the file is parsed,
+# so every value here can be overridden by .env or by real env vars.
+name: ${APP_NAME:-Omega}
+env: ${APP_ENV:-local}
+debug: ${APP_DEBUG:-true}
+
+host: ${APP_HOST:-0.0.0.0}
+port: ${APP_PORT:-3000}
+
+port_attempts: ${APP_PORT_ATTEMPTS:-20}
+
+log_level: ${LOG_LEVEL:-debug}
+
+
+# Timeouts
+read_timeout: 15s
+write_timeout: 15s
+shutdown_timeout: 10s
+
+# Maximum request body size, in bytes (4 MiB).
+body_limit: 4194304
+
+cors:
+  origins: ${CORS_ORIGINS:-http://localhost:5173}
+  credentials: ${CORS_CREDENTIALS:-true}
+
+# Behind a proxy, c.IP() returns the proxy unless proxy_header is set — and a
+# per-IP limiter would then throttle every user together.
+proxy_header: ${APP_PROXY_HEADER:-}
+trusted_proxies: ${APP_TRUSTED_PROXIES:-}
+
+ratelimit:
+  # Every route. 0 disables it.
+  max: ${RATELIMIT_MAX:-0}
+  window: ${RATELIMIT_WINDOW:-1m}
+
+  # The brute-force barrier on login, register, refresh and password. Keyed on
+  # the client address alone, so a valid token buys no extra attempts.
+  credentials:
+    max: ${RATELIMIT_AUTH_MAX:-10}
+    window: ${RATELIMIT_AUTH_WINDOW:-1m}
+
+  # Failed logins counted per account, in the database — so the limit holds
+  # across replicas and restarts, and a distributed attack cannot spread it
+  # over many addresses. 0 disables it.
+  account:
+    max: ${RATELIMIT_ACCOUNT_MAX:-8}
+    window: ${RATELIMIT_ACCOUNT_WINDOW:-15m}

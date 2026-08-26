@@ -1,0 +1,49 @@
+# Authentication.
+#
+# ${VAR:-fallback} is expanded from the environment before the file is parsed,
+# so every value here can be overridden by .env or by real env vars.
+
+# Signs every token. There is no default on purpose: booting without it is
+# refused rather than falling back to a predictable key.
+secret: ${AUTH_SECRET:-}
+
+# How long an access token is honoured. Short, because it cannot be revoked.
+access_ttl: ${AUTH_ACCESS_TTL:-15m}
+
+# How long a refresh token stays valid. It is revocable, so it can be long.
+refresh_ttl: ${AUTH_REFRESH_TTL:-720h}
+
+# Where a provider sends the caller back. Must match what is registered with
+# the provider, down to the scheme and the port.
+callback_url: ${APP_URL:-http://localhost:3000}
+
+# OAuth providers. A provider whose key or secret is empty is skipped, so the
+# whole list can stay here and only the configured ones come up.
+providers:
+  - name: google
+    key: ${GOOGLE_CLIENT_ID:-}
+    secret: ${GOOGLE_CLIENT_SECRET:-}
+
+  - name: github
+    key: ${GITHUB_CLIENT_ID:-}
+    secret: ${GITHUB_CLIENT_SECRET:-}
+
+  - name: gitlab
+    key: ${GITLAB_CLIENT_ID:-}
+    secret: ${GITLAB_CLIENT_SECRET:-}
+
+  - name: microsoftonline
+    key: ${MICROSOFT_CLIENT_ID:-}
+    secret: ${MICROSOFT_CLIENT_SECRET:-}
+
+  - name: facebook
+    key: ${FACEBOOK_CLIENT_ID:-}
+    secret: ${FACEBOOK_CLIENT_SECRET:-}
+
+  - name: discord
+    key: ${DISCORD_CLIENT_ID:-}
+    secret: ${DISCORD_CLIENT_SECRET:-}
+
+  - name: linkedin
+    key: ${LINKEDIN_CLIENT_ID:-}
+    secret: ${LINKEDIN_CLIENT_SECRET:-}

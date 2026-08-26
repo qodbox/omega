@@ -1,0 +1,17 @@
+package events
+
+import (
+	"context"
+
+	"omega"
+)
+
+const {{.Name}}Name = "{{.Snake}}"
+
+type {{.Name}} struct {
+	ID uint `json:"id"`
+}
+
+func Emit{{.Name}}(ctx context.Context, payload {{.Name}}) error {
+	return omega.Emit(ctx, {{.Name}}Name, payload)
+}

@@ -1,0 +1,15 @@
+package middleware
+
+import (
+	"github.com/gofiber/fiber/v2"
+)
+
+func {{.Name}}() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if err := c.Next(); err != nil {
+			return err
+		}
+
+		return nil
+	}
+}

@@ -1,0 +1,43 @@
+package {{.Package}}
+
+import (
+	"context"
+
+	"gorm.io/gorm"
+
+	"omega/app/models"
+	request "omega/app/requests/{{.Snake}}"
+)
+
+type Service struct {
+	db *gorm.DB
+}
+
+func NewService(db *gorm.DB) *Service {
+	return &Service{db: db}
+}
+
+func (s *Service) All(ctx context.Context) ([]models.{{.Name}}, error) {
+	var records []models.{{.Name}}
+	err := s.db.WithContext(ctx).Order("created_at desc").Find(&records).Error
+	return records, err
+}
+
+func (s *Service) Create(ctx context.Context, body request.Payload) (*models.{{.Name}}, error) {
+	record := models.{{.Name}}{}
+	if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
+func (s *Service) Update(ctx context.Context, record *models.{{.Name}}, body request.Payload) (*models.{{.Name}}, error) {
+	if err := s.db.WithContext(ctx).Save(record).Error; err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+func (s *Service) Delete(ctx context.Context, record *models.{{.Name}}) error {
+	return s.db.WithContext(ctx).Delete(record).Error
+}

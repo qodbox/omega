@@ -1,0 +1,24 @@
+package notifications
+
+import (
+	"omega/internal/mail"
+)
+
+type {{.Name}} struct {
+	To   string
+	Name string
+}
+
+func (n {{.Name}}) Channels() []string { return []string{"mail"} }
+
+func (n {{.Name}}) ToMail() mail.Message {
+	return mail.Message{
+		To:      []string{n.To},
+		Subject: "{{.Title}}",
+		Text:    "Hello " + n.Name + ".",
+	}
+}
+
+func (n {{.Name}}) ToBroadcast() (string, string, any) {
+	return "notifications", "{{.Snake}}", map[string]any{"name": n.Name}
+}
