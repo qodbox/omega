@@ -10,6 +10,7 @@ import (
 
 	"omega/internal/broadcast"
 	"omega/internal/cache"
+	"omega/internal/currency"
 	"omega/internal/events"
 	"omega/internal/kernel"
 	"omega/internal/mail"
@@ -64,6 +65,8 @@ func Events() *events.Bus { return C().Events }
 func Schedule() *scheduler.Scheduler { return C().Scheduler }
 
 func Cache() *cache.Cache { return C().Cache }
+
+func Currency() *currency.Exchange { return C().Currency }
 
 func Mail() *mail.Mailer { return C().Mail }
 

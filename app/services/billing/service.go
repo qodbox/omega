@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -19,6 +20,7 @@ import (
 
 	"omega/app/models"
 	"omega/internal/billing"
+	"omega/internal/currency"
 )
 
 var (
@@ -84,6 +86,10 @@ type Service struct {
 	db       *gorm.DB
 	stripe   *billing.Client
 	settings Settings
+	currency *currency.Exchange
+
+	priceMu sync.RWMutex
+	prices  map[string]heldPrice
 }
 
 func NewService(db *gorm.DB, client *billing.Client, settings Settings) *Service {
@@ -113,12 +119,20 @@ func (s *Service) Checkout(ctx context.Context, user *models.User, planName stri
 	// replays the first session instead of opening a second one.
 	key := fmt.Sprintf("checkout:%d:%s:%s", user.ID, plan.Name, customer.StripeID)
 
+	// Bill in what the caller reads in, but only where the price declares that
+	// currency: Stripe refuses a session naming one it does not.
+	bills := s.billsIn(ctx, plan.Price, user.Currency)
+	if bills != "" {
+		key += ":" + bills
+	}
+
 	session, err := s.stripe.CreateCheckoutSession(ctx, billing.CheckoutParams{
 		CustomerID: customer.StripeID,
 		PriceID:    plan.Price,
 		SuccessURL: s.settings.SuccessURL,
 		CancelURL:  s.settings.CancelURL,
 		TrialDays:  plan.TrialDays,
+		Currency:   bills,
 		Metadata:   map[string]string{"user_id": user.Key(), "plan": plan.Name},
 	}, key)
 	if err != nil {

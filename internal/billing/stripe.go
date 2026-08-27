@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -27,6 +28,7 @@ type Subscription struct {
 	ID                string `json:"id"`
 	CustomerID        string `json:"customer"`
 	Status            string `json:"status"`
+	Currency          string `json:"currency"`
 	CancelAtPeriodEnd bool   `json:"cancel_at_period_end"`
 	CurrentPeriodEnd  int64  `json:"current_period_end"`
 	EndedAt           int64  `json:"ended_at"`
@@ -102,6 +104,49 @@ func (c *Client) GetCustomer(ctx context.Context, id string) (Customer, error) {
 	return customer, err
 }
 
+// Price is what a plan costs, as Stripe holds it.
+type Price struct {
+	ID         string `json:"id"`
+	Currency   string `json:"currency"`
+	UnitAmount int64  `json:"unit_amount"`
+
+	Recurring struct {
+		Interval      string `json:"interval"`
+		IntervalCount int    `json:"interval_count"`
+	} `json:"recurring"`
+
+	// CurrencyOptions holds the amounts Stripe will really charge in another
+	// currency. It only arrives when the request expands it, and it is empty
+	// unless the price was set up as multi-currency.
+	CurrencyOptions map[string]struct {
+		UnitAmount int64 `json:"unit_amount"`
+	} `json:"currency_options"`
+}
+
+// AmountIn reports what Stripe would charge in one currency, and whether it
+// would charge in it at all. A currency the price does not declare is not a
+// price: converting it would be quoting a figure nobody will be billed.
+func (p Price) AmountIn(code string) (int64, bool) {
+	code = strings.ToLower(strings.TrimSpace(code))
+	if code == strings.ToLower(p.Currency) {
+		return p.UnitAmount, true
+	}
+	option, found := p.CurrencyOptions[code]
+	if !found {
+		return 0, false
+	}
+	return option.UnitAmount, true
+}
+
+// GetPrice reads a price, with the multi-currency amounts expanded: without
+// that expansion Stripe leaves currency_options out, and every price looks
+// single-currency.
+func (c *Client) GetPrice(ctx context.Context, id string) (Price, error) {
+	var price Price
+	err := c.get(ctx, "/v1/prices/"+url.PathEscape(id)+"?expand[]=currency_options", &price)
+	return price, err
+}
+
 // CheckoutParams is what opening a subscription checkout needs.
 type CheckoutParams struct {
 	CustomerID string
@@ -109,6 +154,11 @@ type CheckoutParams struct {
 	SuccessURL string
 	CancelURL  string
 	TrialDays  int
+
+	// Currency asks Stripe to bill in something other than the price's own
+	// currency. Send it only for a price that declares that currency: Stripe
+	// refuses the session otherwise.
+	Currency string
 
 	// Metadata is copied onto the subscription Stripe creates, which is how the
 	// webhook that follows knows which plan was bought.
@@ -125,6 +175,9 @@ func (c *Client) CreateCheckoutSession(ctx context.Context, params CheckoutParam
 	form.Set("line_items[0][price]", params.PriceID)
 	form.Set("line_items[0][quantity]", "1")
 
+	if params.Currency != "" {
+		form.Set("currency", strings.ToLower(params.Currency))
+	}
 	if params.TrialDays > 0 {
 		form.Set("subscription_data[trial_period_days]", strconv.Itoa(params.TrialDays))
 	}

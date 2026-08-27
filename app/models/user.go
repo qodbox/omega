@@ -20,6 +20,10 @@ type User struct {
 	Password string `gorm:"size:255;not null" json:"-"`
 	Role     string `gorm:"size:32;not null;default:user;index" json:"role"`
 
+	// The currency this account wants to read amounts in. It changes what is
+	// displayed, never what is stored: rows stay in the base currency.
+	Currency string `gorm:"size:3;not null;default:EUR" json:"currency"`
+
 	EmailVerifiedAt *time.Time     `json:"email_verified_at,omitempty"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`

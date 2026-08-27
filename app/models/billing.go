@@ -29,6 +29,10 @@ type BillingSubscription struct {
 	PriceID string `gorm:"size:64;not null" json:"price_id"`
 	Plan    string `gorm:"size:64;not null;index" json:"plan"`
 
+	// The currency Stripe bills this subscription in. It is what was charged,
+	// not what its owner happens to read in.
+	Currency string `gorm:"size:3;not null;default:EUR" json:"currency"`
+
 	CancelAtPeriodEnd bool       `gorm:"not null;default:false" json:"cancel_at_period_end"`
 	CurrentPeriodEnd  *time.Time `json:"current_period_end,omitempty"`
 	EndedAt           *time.Time `json:"ended_at,omitempty"`

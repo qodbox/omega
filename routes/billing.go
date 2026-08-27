@@ -45,7 +45,7 @@ func registerBilling(app *omega.App, group fiber.Router, guard *jwt.Guard, regis
 		Backoff:     settings.Backoff,
 	})
 
-	billed := service.NewService(app.DB, client, settings)
+	billed := service.NewService(app.DB, client, settings).WithCurrency(app.Currency)
 	omega.Bind("billing", billed)
 
 	local := controller.NewController(billed, guard, app.Log)
@@ -54,6 +54,9 @@ func registerBilling(app *omega.App, group fiber.Router, guard *jwt.Guard, regis
 	// Public, and authenticated by the Stripe signature rather than by a token:
 	// Stripe has no bearer token of ours to send.
 	routes.Post("/webhook", local.Webhook).Name("billing.webhook")
+
+	// Public, and priced in the caller's currency when there is a caller.
+	routes.Get("/plans", guard.Optional(), local.Plans).Name("billing.plans")
 
 	routes.Get("/subscription", guard.Required(), local.Show).Name("billing.subscription")
 	routes.Post("/checkout", guard.Required(), local.Checkout).Name("billing.checkout")
@@ -76,6 +79,37 @@ func documentBilling(registry *api.Registry, settings service.Settings) {
 	for _, plan := range settings.Plans {
 		names = append(names, plan.Name)
 	}
+
+	registry.Document("/billing/plans", api.PathItem{
+		Get: (&api.Operation{
+			Tags:    []string{"billing"},
+			Summary: "What is on sale",
+			Description: "Each plan priced in the caller's own currency. A plan Stripe prices in that " +
+				"currency is quoted exactly and `charged` is true; one it does not is converted at the " +
+				"day's rate, `charged` is false, and `settles` names the currency the card is really " +
+				"billed in.",
+			OperationID: "billing.plans",
+			Parameters: []api.Parameter{{
+				Name: "currency", In: "query", Required: false,
+				Description: "Read the prices in this currency. A signed-in caller's own choice is used otherwise.",
+				Schema:      api.String(),
+			}},
+			Responses: map[string]api.Response{
+				"200": api.JSON("The plans on sale", dataOf(&api.Schema{
+					Type: "array", Items: api.Object(map[string]*api.Schema{
+						"name":       api.String(),
+						"amount":     api.Integer(),
+						"currency":   api.String(),
+						"interval":   api.String(),
+						"trial_days": api.Integer(),
+						"charged":    {Type: "boolean"},
+						"settles":    api.String(),
+					}),
+				})),
+				"503": api.Failure("Billing is not configured"),
+			},
+		}).Public(),
+	})
 
 	registry.Document("/billing/subscription", api.PathItem{
 		Get: &api.Operation{

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -127,6 +128,7 @@ func (s *Service) apply(ctx context.Context, tx *gorm.DB, userID uint, remote bi
 		Status:            remote.Status,
 		PriceID:           remote.PriceID(),
 		Plan:              s.settings.PlanForPrice(remote.PriceID()),
+		Currency:          strings.ToUpper(remote.Currency),
 		CancelAtPeriodEnd: remote.CancelAtPeriodEnd,
 		CurrentPeriodEnd:  remote.PeriodEnd(),
 		EndedAt:           remote.Ended(),

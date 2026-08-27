@@ -11,6 +11,7 @@ import (
 
 	"omega/internal/broadcast"
 	"omega/internal/cache"
+	"omega/internal/currency"
 	"omega/internal/database"
 	"omega/internal/events"
 	"omega/internal/mail"
@@ -31,6 +32,7 @@ type Container struct {
 	Events    *events.Bus
 	Scheduler *scheduler.Scheduler
 	Cache     *cache.Cache
+	Currency  *currency.Exchange
 	Mail      *mail.Mailer
 	Storage   *storage.Disk
 	Broadcast *broadcast.Hub

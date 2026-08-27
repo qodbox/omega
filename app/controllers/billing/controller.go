@@ -25,6 +25,24 @@ func NewController(service *service.Service, guard *jwt.Guard, log zerolog.Logge
 	return &Controller{billing: service, guard: guard, log: log}
 }
 
+// Plans answers with what is on sale, priced in the caller's own currency.
+//
+// It is public: a price list is read before anyone signs in. A signed-in caller
+// gets their own currency; anyone else names one with ?currency=, and the base
+// currency answers when neither says anything.
+func (b *Controller) Plans(c *fiber.Ctx) error {
+	want := c.Query("currency")
+	if user, ok := b.guard.User(c).(*models.User); ok && want == "" {
+		want = user.Currency
+	}
+
+	offers, err := b.billing.Plans(c.UserContext(), want)
+	if err != nil {
+		return translate(err)
+	}
+	return c.JSON(fiber.Map{"data": offers})
+}
+
 // Checkout answers with the hosted page the caller must be sent to.
 func (b *Controller) Checkout(c *fiber.Ctx) error {
 	body, err := validation.Bind[request.Checkout](c)

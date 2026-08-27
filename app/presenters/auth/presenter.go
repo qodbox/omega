@@ -11,6 +11,7 @@ type User struct {
 	Name            string     `json:"name"`
 	Email           string     `json:"email"`
 	Role            string     `json:"role"`
+	Currency        string     `json:"currency"`
 	EmailVerifiedAt *time.Time `json:"email_verified_at"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
@@ -22,6 +23,7 @@ func NewUser(user *models.User) User {
 		Name:            user.Name,
 		Email:           user.Email,
 		Role:            user.Role,
+		Currency:        user.Currency,
 		EmailVerifiedAt: user.EmailVerifiedAt,
 		CreatedAt:       user.CreatedAt,
 		UpdatedAt:       user.UpdatedAt,

@@ -20,6 +20,7 @@ import (
 	"omega/internal/auth"
 	"omega/internal/broadcast"
 	"omega/internal/cache"
+	"omega/internal/currency"
 	"omega/internal/database"
 	"omega/internal/events"
 	"omega/internal/mail"
@@ -45,6 +46,7 @@ type App struct {
 	Events    *events.Bus
 	Scheduler *scheduler.Scheduler
 	Cache     *cache.Cache
+	Currency  *currency.Exchange
 	Mail      *mail.Mailer
 	Storage   *storage.Disk
 	Broadcast *broadcast.Hub
@@ -158,6 +160,13 @@ func (a *App) bootServices(conf *Config) error {
 	a.Events = events.New(a.Log)
 	a.Scheduler = scheduler.New(a.Log)
 	a.Cache = cache.New()
+	a.Currency = currency.New(currency.Config{
+		Base:      conf.StringOr("currency.base", currency.DefaultBase),
+		Endpoint:  conf.StringOr("currency.endpoint", currency.DefaultEndpoint),
+		TTL:       conf.Duration("currency.ttl"),
+		Timeout:   conf.Duration("currency.timeout"),
+		Available: conf.StringSlice("currency.available"),
+	})
 	a.Metrics = observability.New()
 	a.Broadcast = broadcast.New()
 	a.Policy = policy.New()
@@ -267,6 +276,7 @@ func (a *App) fillContainer() {
 	c.Events = a.Events
 	c.Scheduler = a.Scheduler
 	c.Cache = a.Cache
+	c.Currency = a.Currency
 	c.Mail = a.Mail
 	c.Storage = a.Storage
 	c.Broadcast = a.Broadcast

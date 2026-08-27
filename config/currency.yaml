@@ -1,0 +1,22 @@
+# Currency, for display.
+#
+# ${VAR:-fallback} is expanded from the environment before the file is parsed,
+# so every value here can be overridden by .env or by real env vars.
+
+# What amounts are stored in. Changing it on a running application does not
+# convert the rows already written: it changes what they are read as.
+base: ${CURRENCY_BASE:-EUR}
+
+# The European Central Bank's daily reference rates.
+endpoint: ${CURRENCY_ENDPOINT:-https://api.frankfurter.dev/v1/latest}
+
+# How long a rate is served before it is fetched again, and how long the fetch
+# itself may take. Rates move once a day.
+ttl: 12h
+timeout: 8s
+
+# Restrict what a caller may choose. Empty offers the whole catalogue; the base
+# currency is always offered, whatever this says.
+#
+# available: [EUR, USD, GBP]
+available: ${CURRENCY_AVAILABLE:-}

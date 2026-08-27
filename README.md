@@ -377,6 +377,39 @@ omega.Mail().Send(omega.Message{To: []string{"ada@example.com"}, Subject: "Hello
 Mail goes to `log` by default — nothing is sent until `MAIL_DRIVER=smtp` is set.
 Storage refuses any path that escapes its root.
 
+## Currency
+
+Amounts are stored in one currency and read in another. Converting in storage
+would make every total depend on the day it was written, and two sums over the
+same month would stop agreeing — so nothing stored is ever converted.
+
+```
+GET /api/currencies          the catalogue and the day's rates (public)
+PUT /api/settings/currency   what the caller reads amounts in
+```
+
+```go
+omega.Currency().Convert(ctx, 1900, "USD")            // from the base currency
+omega.Currency().ConvertFrom(ctx, 1900, "GBP", "USD") // between any two
+omega.Currency().Format(1900, "EUR")                  // "€19.00"
+```
+
+Thirty currencies, all of them quoted by the European Central Bank — which is
+what makes the catalogue a promise rather than a wish list: offering one the
+provider does not quote would offer a choice that converts nothing. Rates are
+fetched once, cached for twelve hours and refreshed on a schedule, so no visitor
+waits on a remote call.
+
+When the provider is down, the last table still held is served; with none at
+all, amounts are returned unchanged in the base currency. An unavailable rate is
+never a failure — the base beats nothing.
+
+```yaml
+# config/currency.yaml
+base: ${CURRENCY_BASE:-EUR}
+available: ${CURRENCY_AVAILABLE:-}   # empty offers the whole catalogue
+```
+
 ## Billing
 
 Stripe subscriptions, written against `net/http`: no billing SDK enters a project
@@ -396,6 +429,7 @@ a price that is not on sale:
 
 | | |
 |---|---|
+| `GET /api/billing/plans` | what is on sale, priced in the caller's currency |
 | `POST /api/billing/checkout` | opens a hosted checkout, answers with its URL |
 | `POST /api/billing/portal` | opens Stripe's portal: card, invoices, cancelling |
 | `GET /api/billing/subscription` | the caller's subscription, or `null` |
@@ -437,6 +471,22 @@ What the webhook endpoint guarantees:
   `billing_subscriptions` and `billing_events` are excluded from schema
   discovery: published as resources they would let any authenticated caller POST
   themselves a subscription.
+
+### Prices in the caller's currency
+
+`GET /api/billing/plans` quotes each plan in the currency its reader chose, and
+says plainly which of two things it is doing:
+
+- the price is **declared in that currency on Stripe** (a multi-currency price):
+  the amount is Stripe's own, `charged` is true, and the checkout bills in it;
+- the price is **not**: the amount is converted at the day's rate for reading,
+  `charged` is false, and `settles` names the currency the card is really
+  charged in.
+
+That distinction is the whole point. A converted figure is a guide, not a price,
+and a customer is owed the difference before they click. Checkout names a
+currency to Stripe only where the price declares one — naming another has the
+session refused — and the subscription records what was actually billed.
 
 Every write to Stripe carries an idempotency key, so a retry — ours or the
 caller's — replays the first answer instead of creating a second customer.
@@ -635,6 +685,7 @@ container.
 | Policies wired to the generated routes | done |
 | Tests for the eight service pieces | done |
 | Billing: Stripe subscriptions, signed and idempotent webhooks | done |
+| Currency: ECB rates, display conversion, per-account choice | done |
 
 ## MCP server
 

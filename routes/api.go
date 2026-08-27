@@ -34,6 +34,8 @@ func RegisterAPI(app *omega.App) error {
 
 	registerDocs(app, group)
 
+	registerCurrency(app, group, guard, registry)
+
 	if err := registerBilling(app, group, guard, registry); err != nil {
 		return err
 	}

@@ -52,6 +52,15 @@ func RegisterWorkers(app *omega.App) error {
 			}
 			return nil
 		}).
+		Every("refresh-exchange-rates", 6*time.Hour, func(ctx context.Context) error {
+			// Rates are fetched on demand and cached; refreshing on a schedule
+			// is what keeps a visitor from ever paying for the remote call.
+			if err := app.Currency.Refresh(ctx); err != nil {
+				// A stale rate is not an incident: the last table still serves.
+				app.Log.Warn().Err(err).Msg("could not refresh the exchange rates")
+			}
+			return nil
+		}).
 		DailyAt("report", "03:00", func(ctx context.Context) error {
 			pending, err := app.Queue.Store().Pending(ctx)
 			if err != nil {

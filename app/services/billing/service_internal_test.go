@@ -14,6 +14,7 @@ import (
 
 	"omega/app/models"
 	"omega/internal/billing"
+	"omega/internal/currency"
 )
 
 func service(t *testing.T) *Service {
@@ -282,6 +283,9 @@ func TestCheckoutCreatesTheCustomerOnceAndAsksForTheRightPrice(t *testing.T) {
 		case "/v1/checkout/sessions":
 			checkout = r
 			_, _ = w.Write([]byte(`{"id":"cs_1","url":"https://checkout.stripe.com/cs_1"}`))
+		case "/v1/prices/price_pro":
+			_, _ = w.Write([]byte(`{"id":"price_pro","currency":"eur","unit_amount":1900,
+				"recurring":{"interval":"month","interval_count":1}}`))
 		default:
 			t.Errorf("unexpected call to %s", r.URL.Path)
 		}
@@ -375,5 +379,164 @@ func TestThereIsNothingToCancelWithoutASubscription(t *testing.T) {
 	}
 	if _, err := s.Resume(context.Background(), 7); !errors.Is(err, ErrNoSubscription) {
 		t.Fatalf("err = %v, want ErrNoSubscription", err)
+	}
+}
+
+// exchangeQuoting builds an exchange whose rate provider is local, so the
+// conversions below are exact rather than whatever the day brings.
+func exchangeQuoting(t *testing.T, rates string) *currency.Exchange {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(rates))
+	}))
+	t.Cleanup(server.Close)
+
+	return currency.New(currency.Config{Base: "EUR", Endpoint: server.URL})
+}
+
+func TestAPlanStripePricesInTheCallersCurrencyIsQuotedExactly(t *testing.T) {
+	s := serviceTalkingTo(t, func(w http.ResponseWriter, r *http.Request) {
+		// A multi-currency price: Stripe will really bill 2100 in USD.
+		_, _ = w.Write([]byte(`{"id":"price_pro","currency":"eur","unit_amount":1900,
+			"recurring":{"interval":"month"},
+			"currency_options":{"usd":{"unit_amount":2100}}}`))
+	})
+	s.WithCurrency(exchangeQuoting(t, `{"rates":{"USD":1.5}}`))
+
+	offers, err := s.Plans(context.Background(), "USD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(offers) != 1 {
+		t.Fatalf("offers = %d, want 1", len(offers))
+	}
+
+	offer := offers[0]
+	if !offer.Charged {
+		t.Fatal("a price Stripe declares in USD should be marked as charged in USD")
+	}
+	if offer.Amount != 2100 {
+		t.Fatalf("Amount = %d, want Stripe's own 2100 — not a conversion of 1900", offer.Amount)
+	}
+	if offer.Currency != "USD" || offer.Settles != "USD" {
+		t.Fatalf("Currency = %q, Settles = %q", offer.Currency, offer.Settles)
+	}
+	if offer.Interval != "month" {
+		t.Fatalf("Interval = %q", offer.Interval)
+	}
+}
+
+func TestAPlanStripeDoesNotPriceIsConvertedAndSaidSo(t *testing.T) {
+	s := serviceTalkingTo(t, func(w http.ResponseWriter, r *http.Request) {
+		// Single-currency: euros, and nothing else.
+		_, _ = w.Write([]byte(`{"id":"price_pro","currency":"eur","unit_amount":1900,
+			"recurring":{"interval":"month"}}`))
+	})
+	s.WithCurrency(exchangeQuoting(t, `{"rates":{"USD":1.5}}`))
+
+	offers, err := s.Plans(context.Background(), "USD")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	offer := offers[0]
+	if offer.Charged {
+		t.Fatal("a converted amount must not claim Stripe charges in that currency")
+	}
+	if offer.Amount != 2850 { // 1900 * 1.5
+		t.Fatalf("Amount = %d, want 2850", offer.Amount)
+	}
+	if offer.Currency != "USD" {
+		t.Fatalf("Currency = %q, the caller reads in USD", offer.Currency)
+	}
+	if offer.Settles != "EUR" {
+		t.Fatalf("Settles = %q: the customer must be told the card is charged in euros", offer.Settles)
+	}
+}
+
+func TestAnUnknownCurrencyFallsBackToTheBase(t *testing.T) {
+	s := serviceTalkingTo(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"price_pro","currency":"eur","unit_amount":1900,
+			"recurring":{"interval":"month"}}`))
+	})
+	s.WithCurrency(exchangeQuoting(t, `{"rates":{"USD":1.5}}`))
+
+	offers, err := s.Plans(context.Background(), "WAT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if offers[0].Currency != "EUR" || offers[0].Amount != 1900 {
+		t.Fatalf("offer = %+v, a currency nobody quotes must fall back to the base", offers[0])
+	}
+}
+
+func TestCheckoutNamesACurrencyOnlyWhenThePriceDeclaresIt(t *testing.T) {
+	for name, tc := range map[string]struct {
+		price string
+		reads string
+		want  string
+	}{
+		"multi-currency price": {
+			price: `{"id":"price_pro","currency":"eur","unit_amount":1900,"currency_options":{"usd":{"unit_amount":2100}}}`,
+			reads: "USD",
+			want:  "usd",
+		},
+		"single-currency price": {
+			price: `{"id":"price_pro","currency":"eur","unit_amount":1900}`,
+			reads: "USD",
+			want:  "", // Stripe would refuse a session naming a currency it has no amount for.
+		},
+		"already the price's own currency": {
+			price: `{"id":"price_pro","currency":"eur","unit_amount":1900}`,
+			reads: "EUR",
+			want:  "",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var checkout *http.Request
+
+			s := serviceTalkingTo(t, func(w http.ResponseWriter, r *http.Request) {
+				_ = r.ParseForm()
+				switch r.URL.Path {
+				case "/v1/customers":
+					_, _ = w.Write([]byte(`{"id":"cus_1"}`))
+				case "/v1/prices/price_pro":
+					_, _ = w.Write([]byte(tc.price))
+				case "/v1/checkout/sessions":
+					checkout = r
+					_, _ = w.Write([]byte(`{"id":"cs_1","url":"https://checkout.stripe.com/cs_1"}`))
+				}
+			})
+			s.WithCurrency(exchangeQuoting(t, `{"rates":{"USD":1.5}}`))
+
+			user := &models.User{Name: "Ada", Email: "a@b.c", Currency: tc.reads}
+			if err := s.db.Create(user).Error; err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := s.Checkout(context.Background(), user, "pro"); err != nil {
+				t.Fatal(err)
+			}
+			if got := checkout.PostForm.Get("currency"); got != tc.want {
+				t.Fatalf("currency = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTheWebhookRecordsWhatStripeBilledIn(t *testing.T) {
+	s := service(t)
+	ctx := context.Background()
+	customerFor(t, s, 7, "cus_1")
+
+	billed := event("evt_1", "customer.subscription.created", "sub_1", "cus_1", "active", `,"currency":"usd"`)
+	if err := s.Handle(ctx, billed); err != nil {
+		t.Fatal(err)
+	}
+
+	current, _ := s.Current(ctx, 7)
+	if current == nil || current.Currency != "USD" {
+		t.Fatalf("Currency = %q, want the currency Stripe charged", current.Currency)
 	}
 }
