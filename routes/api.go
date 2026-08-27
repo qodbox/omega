@@ -34,6 +34,10 @@ func RegisterAPI(app *omega.App) error {
 
 	registerDocs(app, group)
 
+	if err := registerBilling(app, group, guard, registry); err != nil {
+		return err
+	}
+
 	if app.Cfg.Env() != "testing" {
 		if err := RegisterWorkers(app); err != nil {
 			return err

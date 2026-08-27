@@ -1,0 +1,48 @@
+# Billing (Stripe).
+#
+# ${VAR:-fallback} is expanded from the environment before the file is parsed,
+# so every value here can be overridden by .env or by real env vars.
+
+# Billing stays off until it is turned on: without this the routes are not
+# registered at all, rather than registered and answering 500.
+enabled: ${BILLING_ENABLED:-false}
+
+# Secrets. Never commit them: put them in .env, or in the environment.
+secret_key: ${STRIPE_SECRET_KEY:-}
+
+# Signs the webhooks. Without it every webhook is refused — an unsigned
+# request is indistinguishable from a forged one.
+webhook_secret: ${STRIPE_WEBHOOK_SECRET:-}
+
+# Pins the request and response shapes. Stripe never changes a published
+# version, so raise this deliberately, after reading the changelog.
+# Quoted: unquoted, YAML reads 2024-06-20 as a date, not a string.
+api_version: "${STRIPE_API_VERSION:-2024-06-20}"
+
+# Overridden by the tests to point at a local server.
+base_url: ${STRIPE_BASE_URL:-https://api.stripe.com}
+
+# How long a call to Stripe may take, and how often a failed one is retried.
+timeout: 20s
+max_attempts: 3
+backoff: 250ms
+
+# How far a webhook's timestamp may drift from our clock before it is refused.
+# It bounds the replay window, so keep it short.
+tolerance: 5m
+
+# Where Stripe sends the caller back once the hosted pages are done.
+success_url: ${BILLING_SUCCESS_URL:-http://localhost:5173/billing/done}
+cancel_url: ${BILLING_CANCEL_URL:-http://localhost:5173/billing}
+portal_return_url: ${BILLING_PORTAL_RETURN_URL:-http://localhost:5173/billing}
+
+# The plans on sale. A caller asks for a plan by name; the price id never
+# leaves the server, so a crafted request cannot subscribe to another price.
+plans:
+  - name: pro
+    price: ${STRIPE_PRICE_PRO:-}
+    trial_days: 0
+
+  - name: team
+    price: ${STRIPE_PRICE_TEAM:-}
+    trial_days: 0

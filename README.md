@@ -377,6 +377,74 @@ omega.Mail().Send(omega.Message{To: []string{"ada@example.com"}, Subject: "Hello
 Mail goes to `log` by default — nothing is sent until `MAIL_DRIVER=smtp` is set.
 Storage refuses any path that escapes its root.
 
+## Billing
+
+Stripe subscriptions, written against `net/http`: no billing SDK enters a project
+built on Omega, and no SDK release can change what this layer does behind its
+back.
+
+```bash
+BILLING_ENABLED=true
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_PRO=price_...
+```
+
+Enabling it registers six routes. A caller asks for a plan **by name** — the
+price ids never leave the server, so a crafted body cannot subscribe someone to
+a price that is not on sale:
+
+| | |
+|---|---|
+| `POST /api/billing/checkout` | opens a hosted checkout, answers with its URL |
+| `POST /api/billing/portal` | opens Stripe's portal: card, invoices, cancelling |
+| `GET /api/billing/subscription` | the caller's subscription, or `null` |
+| `POST /api/billing/cancel` | at the end of the paid period, or `immediately` |
+| `POST /api/billing/resume` | undoes a cancellation that has not taken effect |
+| `POST /api/billing/webhook` | public, and authenticated by its signature |
+
+The plans on sale are declared in `config/billing.yaml`:
+
+```yaml
+plans:
+  - name: pro
+    price: ${STRIPE_PRICE_PRO:-}
+    trial_days: 14
+```
+
+**Stripe owns the truth.** Nothing here decides that someone is subscribed: a
+checkout that succeeded is not a subscription until the webhook that follows it
+says so. The rest of the application asks one question:
+
+```go
+billed := omega.C().Get("billing").(*billing.Service)
+subscribed, err := billed.Subscribed(ctx, user.ID)
+```
+
+What the webhook endpoint guarantees:
+
+- **The signature is checked on the raw body**, before anything is parsed, with a
+  constant-time compare and a five-minute tolerance that bounds the replay
+  window. Several `v1` signatures are accepted, so a secret can be rotated
+  without dropping an event.
+- **An event is applied exactly once.** Stripe delivers at least once and retries
+  for days; the event id is the primary key of a ledger table, and the insert
+  happens *inside the same transaction* as the change it describes. Either both
+  land, or neither does and the next retry starts clean.
+- **A test event against live keys is refused**, and the reverse too — the usual
+  shape of handing out a paid plan for a payment that never happened.
+- **The tables never reach the router.** `billing_customers`,
+  `billing_subscriptions` and `billing_events` are excluded from schema
+  discovery: published as resources they would let any authenticated caller POST
+  themselves a subscription.
+
+Every write to Stripe carries an idempotency key, so a retry — ours or the
+caller's — replays the first answer instead of creating a second customer.
+
+Billing stays off until `BILLING_ENABLED=true`. Turning it on without a webhook
+secret is refused at boot rather than accepted: an unsigned webhook is
+indistinguishable from a forged one.
+
 ## Realtime and observability
 
 ```
@@ -566,6 +634,7 @@ container.
 | Automatic purge of failed jobs | done |
 | Policies wired to the generated routes | done |
 | Tests for the eight service pieces | done |
+| Billing: Stripe subscriptions, signed and idempotent webhooks | done |
 
 ## MCP server
 

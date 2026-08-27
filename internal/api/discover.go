@@ -71,7 +71,11 @@ func internalTable(table string) bool {
 	switch table {
 	case "migrations", "schema_migrations", "refresh_tokens",
 		"jobs", "failed_jobs", "sessions", "cache", "password_resets",
-		"sqlite_sequence", "goose_db_version":
+		"sqlite_sequence", "goose_db_version",
+		// Billing state is written by Stripe's webhooks and by nothing else.
+		// Published as resources these would let any authenticated caller POST
+		// themselves a subscription, so they never reach the router.
+		"billing_customers", "billing_subscriptions", "billing_events":
 		return true
 	}
 	return strings.HasPrefix(table, "sqlite_") || strings.HasPrefix(table, "pg_")

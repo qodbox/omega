@@ -250,7 +250,13 @@ func Search(root, term string, limit int) (string, error) {
 }
 
 func Read(root, name string) (string, error) {
-	base := filepath.Clean(root)
+	// The root arrives relative ("." from the MCP server): without this the
+	// containment check below compares "README.md" to the prefix "./" and
+	// rejects every path in the project.
+	base, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
 	clean := filepath.Clean(filepath.Join(base, name))
 	if !strings.HasPrefix(clean, base+string(os.PathSeparator)) {
 		return "", fmt.Errorf("%s is outside the project", name)

@@ -110,6 +110,36 @@ func TestReadStaysInsideTheProject(t *testing.T) {
 	}
 }
 
+// Le serveur MCP appelle Read(".", nom) : la racine arrive relative. Avec un
+// root non absolu, le controle de confinement comparait "README.md" au prefixe
+// "./" et refusait tout fichier du projet.
+func TestReadAcceptsARelativeRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "dedans.txt"), []byte("visible"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+
+	if got, err := Read(".", "dedans.txt"); err != nil || got != "visible" {
+		t.Fatalf("racine relative: %q, %v", got, err)
+	}
+
+	// Le garde-fou tient toujours depuis une racine relative.
+	for _, name := range []string{"../secret.txt", "/etc/passwd"} {
+		if _, err := Read(".", name); err == nil {
+			t.Errorf("%q a ete lu hors du projet", name)
+		}
+	}
+}
+
 func TestReadDoesNotFollowASymlinkOutOfTheProject(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "projet")
