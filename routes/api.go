@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/gofiber/adaptor/v2"
@@ -64,6 +65,16 @@ func RegisterAPI(app *omega.App) error {
 
 	registry.Mount(group, guard.Required(), api.Authorize(can))
 
+	// GraphQL serves the same registry, so it has to ask the same policies. REST
+	// gets that from the Authorize middleware; the resolvers get it from here.
+	// Fiber's Locals are fasthttp user values, which the net/http adaptor leaves
+	// on the request context, so the actor the middleware resolved is still
+	// readable once the resolvers run.
+	registry.Protect(
+		app.Policy.Allows,
+		func(ctx context.Context) any { return ctx.Value(auth.LocalsUser) },
+	)
+
 	return registerGraphQL(app, registry, guard)
 }
 
@@ -111,9 +122,19 @@ func registerGraphQL(app *omega.App, registry *api.Registry, guard *auth.Guard) 
 	})
 
 	app.Router.App().
-		Post("/graphql", graphqlAuth(app, guard), adaptor.HTTPHandler(handler)).
+		Post("/graphql", graphqlAuth(app, guard), graphqlActor(guard), adaptor.HTTPHandler(handler)).
 		Name("graphql")
 	return nil
+}
+
+// graphqlActor forces the authenticated user into Locals before the request
+// crosses into net/http. Guard.User resolves lazily, and the resolvers cannot
+// call it: all they hold is a context, not a *fiber.Ctx.
+func graphqlActor(guard *auth.Guard) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		guard.User(c)
+		return c.Next()
+	}
 }
 
 func graphqlAuth(app *omega.App, guard *auth.Guard) fiber.Handler {

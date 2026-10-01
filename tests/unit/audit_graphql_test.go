@@ -15,7 +15,7 @@ func notesSchema(t *testing.T) graphql.Schema {
 	t.Helper()
 
 	db := noteDB(t)
-	registry := api.NewRegistry(db)
+	registry := openGate(api.NewRegistry(db))
 	if err := registry.Discover(db); err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestGraphQLRendersEveryScalarShape(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	registry := api.NewRegistry(db)
+	registry := openGate(api.NewRegistry(db))
 	if err := registry.Discover(db); err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestGraphQLSingularNamesAreCapitalised(t *testing.T) {
 
 func TestSchemaHoldsWithoutAnyWritableResource(t *testing.T) {
 	db := noteDB(t)
-	registry := api.NewRegistry(db)
+	registry := openGate(api.NewRegistry(db))
 	if err := registry.Discover(db); err != nil {
 		t.Fatalf("discover: %v", err)
 	}

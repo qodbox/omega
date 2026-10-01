@@ -100,7 +100,7 @@ type everyKind struct {
 
 func TestResourceDescribesEveryKind(t *testing.T) {
 	db := noteDB(t)
-	registry := api.NewRegistry(db)
+	registry := openGate(api.NewRegistry(db))
 	resource := api.Register[everyKind](registry, "kinds", "kind")
 
 	types := map[string]string{}
@@ -215,7 +215,7 @@ func TestDiscoveryMapsEveryColumnType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	registry := api.NewRegistry(db)
+	registry := openGate(api.NewRegistry(db))
 	if err := registry.Discover(db); err != nil {
 		t.Fatalf("discover: %v", err)
 	}

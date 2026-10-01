@@ -39,6 +39,9 @@ func (r *Registry) Schema() (graphql.Schema, error) {
 		queries[resource.Plural+"_count"] = &graphql.Field{
 			Type: graphql.Int,
 			Resolve: func(p graphql.ResolveParams) (any, error) {
+				if err := r.permits(p.Context, resource, "list"); err != nil {
+					return nil, err
+				}
 				var total int64
 				err := r.scoped(resource).Count(&total).Error
 				return int(total), err
@@ -70,6 +73,9 @@ func (r *Registry) Schema() (graphql.Schema, error) {
 			Type: graphql.Boolean,
 			Args: graphql.FieldConfigArgument{"id": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)}},
 			Resolve: func(p graphql.ResolveParams) (any, error) {
+				if err := r.permits(p.Context, resource, "delete"); err != nil {
+					return nil, err
+				}
 				result := r.deleteRow(resource, p.Args["id"])
 				return result.RowsAffected > 0, result.Error
 			},
@@ -162,6 +168,10 @@ func withID(args graphql.FieldConfigArgument) graphql.FieldConfigArgument {
 }
 
 func (r *Registry) resolveList(resource *Resource, p graphql.ResolveParams) (any, error) {
+	if err := r.permits(p.Context, resource, "list"); err != nil {
+		return nil, err
+	}
+
 	query := r.scoped(resource)
 
 	if sort, ok := p.Args["sort"].(string); ok && sort != "" {
@@ -189,6 +199,10 @@ func (r *Registry) resolveList(resource *Resource, p graphql.ResolveParams) (any
 }
 
 func (r *Registry) resolveOne(resource *Resource, p graphql.ResolveParams) (any, error) {
+	if err := r.permits(p.Context, resource, "view"); err != nil {
+		return nil, err
+	}
+
 	row := map[string]any{}
 	if err := r.scoped(resource).Where("id = ?", p.Args["id"]).Take(&row).Error; err != nil {
 		return nil, nil
@@ -197,6 +211,10 @@ func (r *Registry) resolveOne(resource *Resource, p graphql.ResolveParams) (any,
 }
 
 func (r *Registry) resolveCreate(resource *Resource, p graphql.ResolveParams) (any, error) {
+	if err := r.permits(p.Context, resource, "create"); err != nil {
+		return nil, err
+	}
+
 	payload := arguments(resource, p, false)
 	if len(payload) == 0 {
 		return nil, fmt.Errorf("nothing to create")
@@ -221,6 +239,10 @@ func (r *Registry) resolveCreate(resource *Resource, p graphql.ResolveParams) (a
 }
 
 func (r *Registry) resolveUpdate(resource *Resource, p graphql.ResolveParams) (any, error) {
+	if err := r.permits(p.Context, resource, "update"); err != nil {
+		return nil, err
+	}
+
 	payload := arguments(resource, p, true)
 	if resource.hasColumn(updatedAt) {
 		payload[updatedAt] = time.Now()
@@ -233,7 +255,17 @@ func (r *Registry) resolveUpdate(resource *Resource, p graphql.ResolveParams) (a
 	if result.RowsAffected == 0 {
 		return nil, nil
 	}
-	return r.resolveOne(resource, p)
+	return r.readBack(resource, p.Args["id"])
+}
+
+// readBack serves the row an actor has just written. It carries no ability check
+// of its own: whoever passed the create or update check may see the result.
+func (r *Registry) readBack(resource *Resource, id any) (any, error) {
+	row := map[string]any{}
+	if err := r.scoped(resource).Where("id = ?", id).Take(&row).Error; err != nil {
+		return nil, err
+	}
+	return resource.serialise(row), nil
 }
 
 func arguments(resource *Resource, p graphql.ResolveParams, skipID bool) map[string]any {

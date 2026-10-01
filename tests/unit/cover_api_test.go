@@ -81,7 +81,7 @@ func apiCovRegistry(t *testing.T) (*api.Registry, *gorm.DB) {
 	t.Helper()
 
 	db := apiCovDB(t)
-	registry := api.NewRegistry(db)
+	registry := openGate(api.NewRegistry(db))
 	api.Register[apiCovCarnet](registry, "carnets", "carnet", "secret")
 	return registry, db
 }
@@ -206,7 +206,7 @@ func TestApiCovAuthorizeMapsEveryRestAction(t *testing.T) {
 }
 
 func TestApiCovDiscoverIgnoresANilDatabase(t *testing.T) {
-	registry := api.NewRegistry(nil)
+	registry := openGate(api.NewRegistry(nil))
 	if err := registry.Discover(nil); err != nil {
 		t.Fatalf("Discover(nil) = %v, want nil", err)
 	}
@@ -225,7 +225,7 @@ func TestApiCovDiscoverReportsAnUnreadableDatabase(t *testing.T) {
 		t.Fatalf("fermeture: %v", err)
 	}
 
-	registry := api.NewRegistry(db)
+	registry := openGate(api.NewRegistry(db))
 	if err := registry.Discover(db); err == nil {
 		t.Fatal("Discover doit remonter l'echec de lecture des tables")
 	}
@@ -237,7 +237,7 @@ func TestApiCovDiscoverSkipsATableItCannotInspect(t *testing.T) {
 		t.Fatalf("creation: %v", err)
 	}
 
-	registry := api.NewRegistry(db)
+	registry := openGate(api.NewRegistry(db))
 	if err := registry.Discover(db); err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestApiCovDiscoverRenamesAnUncountableTable(t *testing.T) {
 		t.Fatalf("creation: %v", err)
 	}
 
-	registry := api.NewRegistry(db)
+	registry := openGate(api.NewRegistry(db))
 	if err := registry.Discover(db); err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestApiCovDocsAssetRefusesAnEmptyOrTraversingName(t *testing.T) {
 }
 
 func TestApiCovRegisterDescribesUnusualTypes(t *testing.T) {
-	registry := api.NewRegistry(apiCovDB(t))
+	registry := openGate(api.NewRegistry(apiCovDB(t)))
 
 	pointeur := api.Register[*apiCovCarnet](registry, "pointeurs", "pointeur")
 	if !pointeur.Fields[0].ReadOnly || pointeur.Fields[0].Name != "id" {
@@ -552,7 +552,7 @@ func TestApiCovOpenAPIHidesWhatIsNotExposed(t *testing.T) {
 }
 
 func TestApiCovSchemaRefusesAnUnnamedSingular(t *testing.T) {
-	registry := api.NewRegistry(apiCovDB(t))
+	registry := openGate(api.NewRegistry(apiCovDB(t)))
 	api.Register[apiCovCarnet](registry, "vides", "")
 
 	if _, err := registry.Schema(); err == nil {

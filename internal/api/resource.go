@@ -39,6 +39,11 @@ type Registry struct {
 	db        *gorm.DB
 	resources []*Resource
 
+	// Set through Protect. The GraphQL resolvers consult these; the REST routes
+	// are guarded by the Authorize middleware instead.
+	gate      Gate
+	actorFrom ActorFrom
+
 	extra map[string]PathItem
 }
 

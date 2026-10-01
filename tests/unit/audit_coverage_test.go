@@ -165,7 +165,7 @@ func TestSocialProvidersAreValidated(t *testing.T) {
 
 func TestRegistryDBAndFind(t *testing.T) {
 	db := noteDB(t)
-	registry := api.NewRegistry(db)
+	registry := openGate(api.NewRegistry(db))
 
 	if registry.DB() != db {
 		t.Error("DB() ne renvoie pas la connexion")
