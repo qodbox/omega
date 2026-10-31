@@ -7,13 +7,14 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 
@@ -197,25 +198,27 @@ func (a *App) bootServices(conf *Config) error {
 }
 
 func (a *App) bootHTTP(conf *Config) {
+	trusted := conf.StringSlice("app.trusted_proxies")
 	a.Fiber = fiber.New(fiber.Config{
-		AppName:                 conf.StringOr("app.name", "Omega"),
-		ErrorHandler:            ErrorHandler(a.Log, conf.Debug(), conf.IsLocal()),
-		DisableStartupMessage:   true,
-		ReadTimeout:             conf.Duration("app.read_timeout"),
-		WriteTimeout:            conf.Duration("app.write_timeout"),
-		BodyLimit:               conf.IntOr("app.body_limit", 4*1024*1024),
-		ProxyHeader:             conf.StringOr("app.proxy_header", ""),
-		EnableTrustedProxyCheck: len(conf.StringSlice("app.trusted_proxies")) > 0,
-		TrustedProxies:          conf.StringSlice("app.trusted_proxies"),
+		AppName:      conf.StringOr("app.name", "Omega"),
+		ErrorHandler: ErrorHandler(a.Log, conf.Debug(), conf.IsLocal()),
+		ReadTimeout:  conf.Duration("app.read_timeout"),
+		WriteTimeout: conf.Duration("app.write_timeout"),
+		BodyLimit:    conf.IntOr("app.body_limit", 4*1024*1024),
+		ProxyHeader:  conf.StringOr("app.proxy_header", ""),
+		// Fiber v3 reads ProxyHeader only from a trusted proxy, so the header is
+		// honoured once APP_TRUSTED_PROXIES names the proxies in front of us.
+		TrustProxy:       len(trusted) > 0,
+		TrustProxyConfig: fiber.TrustProxyConfig{Proxies: trusted},
 	})
 
 	a.Fiber.Use(recover.New())
 	a.Fiber.Use(cors.New(cors.Config{
-		AllowOrigins:     conf.StringOr("app.cors.origins", "http://localhost:5173"),
+		AllowOrigins:     splitList(conf.StringOr("app.cors.origins", "http://localhost:5173")),
 		AllowCredentials: conf.BoolOr("app.cors.credentials", true),
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Omega-Live, X-Omega-Navigate",
-		AllowMethods:     "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-		ExposeHeaders:    "Content-Length",
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Omega-Live", "X-Omega-Navigate"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		ExposeHeaders:    []string{"Content-Length"},
 		MaxAge:           600,
 	}))
 	a.Fiber.Use(RequestID())
@@ -227,7 +230,7 @@ func (a *App) bootHTTP(conf *Config) {
 			Max:          conf.IntOr("app.ratelimit.max", 120),
 			Expiration:   conf.Duration("app.ratelimit.window"),
 			KeyGenerator: rateKey,
-			LimitReached: func(c *fiber.Ctx) error {
+			LimitReached: func(c fiber.Ctx) error {
 				return fiber.NewError(fiber.StatusTooManyRequests, "Too many requests.")
 			},
 		}))
@@ -239,7 +242,7 @@ func (a *App) bootHTTP(conf *Config) {
 func (a *App) CredentialLimiter() fiber.Handler {
 	max := a.Cfg.IntOr("app.ratelimit.credentials.max", 10)
 	if max <= 0 {
-		return func(c *fiber.Ctx) error { return c.Next() }
+		return func(c fiber.Ctx) error { return c.Next() }
 	}
 
 	window := a.Cfg.Duration("app.ratelimit.credentials.window")
@@ -250,16 +253,27 @@ func (a *App) CredentialLimiter() fiber.Handler {
 	return limiter.New(limiter.Config{
 		Max:        max,
 		Expiration: window,
-		KeyGenerator: func(c *fiber.Ctx) string {
+		KeyGenerator: func(c fiber.Ctx) string {
 			return "credentials:" + c.Route().Path + ":" + c.IP()
 		},
-		LimitReached: func(c *fiber.Ctx) error {
+		LimitReached: func(c fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusTooManyRequests, "Too many attempts. Try again later.")
 		},
 	})
 }
 
-func rateKey(c *fiber.Ctx) string {
+// splitList turns a comma-separated setting into the list Fiber v3 expects.
+func splitList(raw string) []string {
+	out := []string{}
+	for _, part := range strings.Split(raw, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func rateKey(c fiber.Ctx) string {
 	if token := auth.Fingerprint(c); token != "" {
 		return "token:" + token
 	}
@@ -345,7 +359,7 @@ func (a *App) Run() error {
 
 	errs := make(chan error, 1)
 	go func() {
-		if err := a.Fiber.Listener(listener); err != nil {
+		if err := a.Fiber.Listener(listener, fiber.ListenConfig{DisableStartupMessage: true}); err != nil {
 			errs <- err
 		}
 	}()

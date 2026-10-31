@@ -3,7 +3,7 @@ package billing
 import (
 	"errors"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/rs/zerolog"
 
 	"omega/app/models"
@@ -30,13 +30,13 @@ func NewController(service *service.Service, guard *jwt.Guard, log zerolog.Logge
 // It is public: a price list is read before anyone signs in. A signed-in caller
 // gets their own currency; anyone else names one with ?currency=, and the base
 // currency answers when neither says anything.
-func (b *Controller) Plans(c *fiber.Ctx) error {
+func (b *Controller) Plans(c fiber.Ctx) error {
 	want := c.Query("currency")
 	if user, ok := b.guard.User(c).(*models.User); ok && want == "" {
 		want = user.Currency
 	}
 
-	offers, err := b.billing.Plans(c.UserContext(), want)
+	offers, err := b.billing.Plans(c.Context(), want)
 	if err != nil {
 		return translate(err)
 	}
@@ -44,7 +44,7 @@ func (b *Controller) Plans(c *fiber.Ctx) error {
 }
 
 // Checkout answers with the hosted page the caller must be sent to.
-func (b *Controller) Checkout(c *fiber.Ctx) error {
+func (b *Controller) Checkout(c fiber.Ctx) error {
 	body, err := validation.Bind[request.Checkout](c)
 	if err != nil {
 		return err
@@ -55,7 +55,7 @@ func (b *Controller) Checkout(c *fiber.Ctx) error {
 		return err
 	}
 
-	url, err := b.billing.Checkout(c.UserContext(), user, body.Plan)
+	url, err := b.billing.Checkout(c.Context(), user, body.Plan)
 	if err != nil {
 		return translate(err)
 	}
@@ -63,13 +63,13 @@ func (b *Controller) Checkout(c *fiber.Ctx) error {
 }
 
 // Portal answers with the billing portal page for the caller.
-func (b *Controller) Portal(c *fiber.Ctx) error {
+func (b *Controller) Portal(c fiber.Ctx) error {
 	user, err := b.caller(c)
 	if err != nil {
 		return err
 	}
 
-	url, err := b.billing.Portal(c.UserContext(), user)
+	url, err := b.billing.Portal(c.Context(), user)
 	if err != nil {
 		return translate(err)
 	}
@@ -77,13 +77,13 @@ func (b *Controller) Portal(c *fiber.Ctx) error {
 }
 
 // Show answers with the caller's subscription, or a null one.
-func (b *Controller) Show(c *fiber.Ctx) error {
+func (b *Controller) Show(c fiber.Ctx) error {
 	user, err := b.caller(c)
 	if err != nil {
 		return err
 	}
 
-	subscription, err := b.billing.Current(c.UserContext(), user.ID)
+	subscription, err := b.billing.Current(c.Context(), user.ID)
 	if err != nil {
 		return translate(err)
 	}
@@ -91,7 +91,7 @@ func (b *Controller) Show(c *fiber.Ctx) error {
 }
 
 // Cancel stops the caller's subscription.
-func (b *Controller) Cancel(c *fiber.Ctx) error {
+func (b *Controller) Cancel(c fiber.Ctx) error {
 	user, err := b.caller(c)
 	if err != nil {
 		return err
@@ -100,12 +100,12 @@ func (b *Controller) Cancel(c *fiber.Ctx) error {
 	var body request.Cancel
 	// The body is optional: cancelling with no body means "at period end".
 	if len(c.Body()) > 0 {
-		if err := c.BodyParser(&body); err != nil {
+		if err := c.Bind().Body(&body); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Malformed body.")
 		}
 	}
 
-	subscription, err := b.billing.Cancel(c.UserContext(), user.ID, body.Immediately)
+	subscription, err := b.billing.Cancel(c.Context(), user.ID, body.Immediately)
 	if err != nil {
 		return translate(err)
 	}
@@ -113,13 +113,13 @@ func (b *Controller) Cancel(c *fiber.Ctx) error {
 }
 
 // Resume undoes a cancellation that has not taken effect yet.
-func (b *Controller) Resume(c *fiber.Ctx) error {
+func (b *Controller) Resume(c fiber.Ctx) error {
 	user, err := b.caller(c)
 	if err != nil {
 		return err
 	}
 
-	subscription, err := b.billing.Resume(c.UserContext(), user.ID)
+	subscription, err := b.billing.Resume(c.Context(), user.ID)
 	if err != nil {
 		return translate(err)
 	}
@@ -131,7 +131,7 @@ func (b *Controller) Resume(c *fiber.Ctx) error {
 // It is the only public route here, so it authenticates the request itself,
 // from the signature over the raw body. Nothing is read out of the payload
 // before that check passes.
-func (b *Controller) Webhook(c *fiber.Ctx) error {
+func (b *Controller) Webhook(c fiber.Ctx) error {
 	settings := b.billing.Settings()
 
 	event, err := billing.VerifyWebhook(
@@ -146,7 +146,7 @@ func (b *Controller) Webhook(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid signature.")
 	}
 
-	switch err := b.billing.Handle(c.UserContext(), event); {
+	switch err := b.billing.Handle(c.Context(), event); {
 	case err == nil:
 		b.log.Info().Str("event", event.Type).Str("id", event.ID).Msg("applied a Stripe event")
 
@@ -169,7 +169,7 @@ func (b *Controller) Webhook(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"received": true})
 }
 
-func (b *Controller) caller(c *fiber.Ctx) (*models.User, error) {
+func (b *Controller) caller(c fiber.Ctx) (*models.User, error) {
 	user, ok := b.guard.User(c).(*models.User)
 	if !ok {
 		return nil, fiber.NewError(fiber.StatusUnauthorized, "Authentication required.")

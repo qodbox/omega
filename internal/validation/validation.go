@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 var validate = newValidator()
@@ -47,10 +47,10 @@ func Failed(field, message string) *Error {
 	return &Error{Fields: map[string]string{field: message}}
 }
 
-func Bind[T any](c *fiber.Ctx) (*T, error) {
+func Bind[T any](c fiber.Ctx) (*T, error) {
 	var body T
 
-	if err := c.BodyParser(&body); err != nil {
+	if err := c.Bind().Body(&body); err != nil {
 		return nil, fiber.NewError(fiber.StatusBadRequest, "The request body is not valid JSON.")
 	}
 	if err := Struct(&body); err != nil {

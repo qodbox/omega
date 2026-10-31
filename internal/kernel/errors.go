@@ -3,14 +3,14 @@ package kernel
 import (
 	"errors"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/rs/zerolog"
 
 	"omega/internal/validation"
 )
 
 func ErrorHandler(log zerolog.Logger, debug, pretty bool) fiber.ErrorHandler {
-	return func(c *fiber.Ctx, err error) error {
+	return func(c fiber.Ctx, err error) error {
 		status := fiber.StatusInternalServerError
 		message := "An internal error occurred."
 

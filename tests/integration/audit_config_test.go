@@ -10,6 +10,8 @@ import (
 	"omega"
 	"omega/internal/database"
 	"omega/routes"
+
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestCorsOriginsComeFromTheConfiguration(t *testing.T) {
@@ -19,7 +21,7 @@ func TestCorsOriginsComeFromTheConfiguration(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	request.Header.Set("Origin", "https://console.dinasa.ht")
 
-	response, err := s.app.Fiber.Test(request, -1)
+	response, err := s.app.Fiber.Test(request, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
 		t.Fatalf("requete: %v", err)
 	}

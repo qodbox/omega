@@ -4,15 +4,17 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/requestid"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/rs/zerolog"
 )
 
+// RequestIDKey is the Locals key an id set by hand is read from. The request id
+// middleware keeps its own value, reached through requestid.FromContext.
 const RequestIDKey = "requestid"
 
 func RequestLogger(log zerolog.Logger, pretty bool) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		start := time.Now()
 		err := c.Next()
 
@@ -54,10 +56,13 @@ func RequestLogger(log zerolog.Logger, pretty bool) fiber.Handler {
 }
 
 func RequestID() fiber.Handler {
-	return requestid.New(requestid.Config{ContextKey: RequestIDKey})
+	return requestid.New()
 }
 
-func requestID(c *fiber.Ctx) string {
+func requestID(c fiber.Ctx) string {
+	if id := requestid.FromContext(c); id != "" {
+		return id
+	}
 	if id, ok := c.Locals(RequestIDKey).(string); ok {
 		return id
 	}

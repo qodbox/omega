@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/graphql-go/graphql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -120,7 +120,7 @@ func apiCovCall(t *testing.T, app *fiber.App, method, path, payload string) (int
 		request.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
 	}
 
-	response, err := app.Test(request, 5000)
+	response, err := app.Test(request, fiber.TestConfig{Timeout: time.Duration(5000) * time.Millisecond})
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}
@@ -139,12 +139,12 @@ func apiCovGraphQL(t *testing.T, schema graphql.Schema, query string) *graphql.R
 func TestApiCovAuthorizeOnlyGuardsNamedRestRoutes(t *testing.T) {
 	demanded := ""
 	ability := func(name string) fiber.Handler {
-		return func(c *fiber.Ctx) error {
+		return func(c fiber.Ctx) error {
 			demanded = name
 			return c.SendString("garde")
 		}
 	}
-	final := func(c *fiber.Ctx) error { return c.SendString("libre") }
+	final := func(c fiber.Ctx) error { return c.SendString("libre") }
 
 	app := fiber.New()
 	app.Get("/pages", api.Authorize(ability), final).Name("web.pages")
@@ -175,7 +175,7 @@ func TestApiCovAuthorizeOnlyGuardsNamedRestRoutes(t *testing.T) {
 func TestApiCovAuthorizeMapsEveryRestAction(t *testing.T) {
 	demanded := ""
 	ability := func(name string) fiber.Handler {
-		return func(c *fiber.Ctx) error {
+		return func(c fiber.Ctx) error {
 			demanded = name
 			return c.SendStatus(fiber.StatusOK)
 		}

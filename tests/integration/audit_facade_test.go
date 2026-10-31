@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"omega"
 	"omega/app/models"
@@ -233,7 +233,7 @@ func TestFacadeMustMakeReturnsOrPanics(t *testing.T) {
 func TestFacadeModelBindsThroughTheRouter(t *testing.T) {
 	s := boot(t)
 
-	s.app.Fiber.Get("/audit/users/:id", omega.Model[models.User](), func(c *fiber.Ctx) error {
+	s.app.Fiber.Get("/audit/users/:id", omega.Model[models.User](), func(c fiber.Ctx) error {
 		return c.SendString(omega.Bound[models.User](c).Email)
 	})
 

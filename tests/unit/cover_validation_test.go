@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"omega/internal/validation"
 )
@@ -113,7 +113,7 @@ func TestCovStructRefusesANonStruct(t *testing.T) {
 
 func TestCovBindReadsAValidBody(t *testing.T) {
 	app := fiber.New()
-	app.Post("/", func(c *fiber.Ctx) error {
+	app.Post("/", func(c fiber.Ctx) error {
 		body, err := validation.Bind[covPayload](c)
 		if err != nil {
 			return err
@@ -128,7 +128,7 @@ func TestCovBindReadsAValidBody(t *testing.T) {
 
 func TestCovBindRejectsBrokenJson(t *testing.T) {
 	app := fiber.New()
-	app.Post("/", func(c *fiber.Ctx) error {
+	app.Post("/", func(c fiber.Ctx) error {
 		_, err := validation.Bind[covPayload](c)
 		return err
 	})
@@ -140,7 +140,7 @@ func TestCovBindRejectsBrokenJson(t *testing.T) {
 
 func TestCovBindReportsEveryInvalidField(t *testing.T) {
 	app := fiber.New()
-	app.Post("/", func(c *fiber.Ctx) error {
+	app.Post("/", func(c fiber.Ctx) error {
 		_, err := validation.Bind[covPayload](c)
 		if err == nil {
 			return c.SendStatus(fiber.StatusOK)
@@ -226,7 +226,7 @@ func covPost(t *testing.T, app *fiber.App, body string) int {
 	request := httptest.NewRequest("POST", "/", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
 		t.Fatalf("requete: %v", err)
 	}

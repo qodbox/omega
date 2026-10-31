@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 
@@ -108,6 +108,6 @@ func Model[T any](opts ...router.BindOptions) fiber.Handler {
 	return router.Model[T](DB(), opts...)
 }
 
-func Bound[T any](c *fiber.Ctx) *T { return router.MustBound[T](c) }
+func Bound[T any](c fiber.Ctx) *T { return router.MustBound[T](c) }
 
 func URL(name string, params map[string]any) (string, error) { return Router().URL(name, params) }

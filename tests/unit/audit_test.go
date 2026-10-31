@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"omega/internal/cache"
 	"omega/internal/router"
@@ -21,7 +21,7 @@ import (
 
 func namedRouter(path, name string) *router.Router {
 	app := fiber.New()
-	app.Get(path, func(c *fiber.Ctx) error { return nil }).Name(name)
+	app.Get(path, func(c fiber.Ctx) error { return nil }).Name(name)
 	return router.New(app)
 }
 

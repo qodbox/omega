@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type Ability func(string) fiber.Handler
 
 func Authorize(can Ability) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		resource, action := abilityOf(c)
 		if resource == "" {
 			return c.Next()
@@ -21,7 +21,7 @@ func Authorize(can Ability) fiber.Handler {
 	}
 }
 
-func abilityOf(c *fiber.Ctx) (string, string) {
+func abilityOf(c fiber.Ctx) (string, string) {
 	name := c.Route().Name
 	if !strings.HasPrefix(name, "api.") {
 		return "", ""
@@ -55,7 +55,7 @@ func abilityOf(c *fiber.Ctx) (string, string) {
 type Gate func(ctx context.Context, actor any, ability string, subject ...any) bool
 
 // ActorFrom pulls the authenticated actor out of a request context. The REST
-// handlers receive a *fiber.Ctx and are guarded by Authorize, but GraphQL
+// handlers receive a fiber.Ctx and are guarded by Authorize, but GraphQL
 // reaches the resolvers through the net/http adaptor, where all that survives is
 // the request context — which still carries whatever fiber stored in Locals.
 type ActorFrom func(ctx context.Context) any

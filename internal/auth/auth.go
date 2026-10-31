@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -150,7 +150,7 @@ func (g *Guard) Subject(raw string) (string, error) {
 }
 
 func (g *Guard) Required() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		claims, err := g.authenticate(c)
 		if err != nil {
 			return unauthorized(err)
@@ -161,7 +161,7 @@ func (g *Guard) Required() fiber.Handler {
 }
 
 func (g *Guard) Optional() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		if claims, err := g.authenticate(c); err == nil {
 			c.Locals(LocalsClaims, claims)
 		}
@@ -175,7 +175,7 @@ func (g *Guard) Roles(roles ...string) fiber.Handler {
 		allowed[role] = true
 	}
 
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		claims, ok := c.Locals(LocalsClaims).(Claims)
 		if !ok {
 			return fiber.NewError(fiber.StatusUnauthorized, "Authentication required.")
@@ -187,7 +187,7 @@ func (g *Guard) Roles(roles ...string) fiber.Handler {
 	}
 }
 
-func (g *Guard) authenticate(c *fiber.Ctx) (Claims, error) {
+func (g *Guard) authenticate(c fiber.Ctx) (Claims, error) {
 	raw := bearer(c)
 	if raw == "" {
 		return Claims{}, ErrMalformed
@@ -201,7 +201,7 @@ func (g *Guard) authenticate(c *fiber.Ctx) (Claims, error) {
 	return claims, nil
 }
 
-func (g *Guard) User(c *fiber.Ctx) any {
+func (g *Guard) User(c fiber.Ctx) any {
 	if loaded := c.Locals(LocalsUser); loaded != nil {
 		return loaded
 	}
@@ -220,7 +220,7 @@ func (g *Guard) User(c *fiber.Ctx) any {
 	return user
 }
 
-func Fingerprint(c *fiber.Ctx) string {
+func Fingerprint(c fiber.Ctx) string {
 	raw := bearer(c)
 	if raw == "" {
 		return ""
@@ -233,12 +233,12 @@ func Fingerprint(c *fiber.Ctx) string {
 	return signature[:16]
 }
 
-func ClaimsOf(c *fiber.Ctx) (Claims, bool) {
+func ClaimsOf(c fiber.Ctx) (Claims, bool) {
 	claims, ok := c.Locals(LocalsClaims).(Claims)
 	return claims, ok
 }
 
-func bearer(c *fiber.Ctx) string {
+func bearer(c fiber.Ctx) string {
 	raw := strings.TrimSpace(c.Get(fiber.HeaderAuthorization))
 
 	for range 2 {

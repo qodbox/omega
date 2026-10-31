@@ -9,8 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/valyala/fasthttp"
+	"github.com/gofiber/fiber/v3"
 )
 
 type Message struct {
@@ -103,7 +102,7 @@ func (h *Hub) Stream(heartbeat time.Duration) fiber.Handler {
 		heartbeat = 25 * time.Second
 	}
 
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		channels := c.Query("channels")
 		wanted := splitAndTrim(channels)
 
@@ -112,7 +111,7 @@ func (h *Hub) Stream(heartbeat time.Duration) fiber.Handler {
 		c.Set(fiber.HeaderConnection, "keep-alive")
 		c.Set("X-Accel-Buffering", "no")
 
-		c.Context().SetBodyStreamWriter(fasthttp.StreamWriter(func(w *bufio.Writer) {
+		return c.SendStreamWriter(func(w *bufio.Writer) {
 			client := h.subscribe(wanted)
 			defer h.unsubscribe(client)
 
@@ -151,9 +150,7 @@ func (h *Hub) Stream(heartbeat time.Duration) fiber.Handler {
 					}
 				}
 			}
-		}))
-
-		return nil
+		})
 	}
 }
 

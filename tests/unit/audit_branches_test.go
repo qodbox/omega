@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"gorm.io/gorm"
 
 	"omega/app/models"
@@ -126,7 +126,7 @@ func TestResourceDescribesEveryKind(t *testing.T) {
 
 func TestRouterEscapesWildcardSegments(t *testing.T) {
 	app := fiber.New()
-	app.Get("/fichiers/*", func(c *fiber.Ctx) error { return nil }).Name("fichiers.show")
+	app.Get("/fichiers/*", func(c fiber.Ctx) error { return nil }).Name("fichiers.show")
 	r := router.New(app)
 
 	built, err := r.URL("fichiers.show", map[string]any{"*": "dossier/sous dossier/note.txt"})
@@ -161,7 +161,7 @@ func TestFingerprintReadsTheBearer(t *testing.T) {
 	app := fiber.New()
 
 	var withToken, without string
-	app.Get("/empreinte", func(c *fiber.Ctx) error {
+	app.Get("/empreinte", func(c fiber.Ctx) error {
 		if c.Get(fiber.HeaderAuthorization) != "" {
 			withToken = auth.Fingerprint(c)
 		} else {
@@ -172,10 +172,10 @@ func TestFingerprintReadsTheBearer(t *testing.T) {
 
 	request := httptest.NewRequest("GET", "/empreinte", nil)
 	request.Header.Set(fiber.HeaderAuthorization, "Bearer un-jeton-quelconque")
-	if _, err := app.Test(request, 2000); err != nil {
+	if _, err := app.Test(request, fiber.TestConfig{Timeout: time.Duration(2000) * time.Millisecond}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.Test(httptest.NewRequest("GET", "/empreinte", nil), 2000); err != nil {
+	if _, err := app.Test(httptest.NewRequest("GET", "/empreinte", nil), fiber.TestConfig{Timeout: time.Duration(2000) * time.Millisecond}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -189,7 +189,7 @@ func TestFingerprintReadsTheBearer(t *testing.T) {
 
 func TestUpgradeRefusesAPlainRequest(t *testing.T) {
 	app := fiber.New()
-	app.Get("/ws", broadcast.Upgrade(), func(c *fiber.Ctx) error { return nil })
+	app.Get("/ws", broadcast.Upgrade(), func(c fiber.Ctx) error { return nil })
 
 	if status := statusOf(t, app, "/ws"); status != fiber.StatusUpgradeRequired {
 		t.Fatalf("status = %d, want 426", status)

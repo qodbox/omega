@@ -16,6 +16,8 @@ import (
 	_ "omega/database/migrations"
 	_ "omega/database/seeds"
 	"omega/internal/database"
+
+	"github.com/gofiber/fiber/v3"
 )
 
 type server struct {
@@ -100,7 +102,7 @@ func (s *server) do(method, path string, payload any) response {
 		request.Header.Set("Authorization", "Bearer "+s.token)
 	}
 
-	result, err := s.app.Fiber.Test(request, -1)
+	result, err := s.app.Fiber.Test(request, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
 		s.t.Fatalf("%s %s: %v", method, path, err)
 	}

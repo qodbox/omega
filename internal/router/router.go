@@ -6,7 +6,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/static"
 )
 
 type Router struct {
@@ -17,14 +18,16 @@ func New(app *fiber.App) *Router { return &Router{app: app} }
 
 func (r *Router) App() *fiber.App { return r.app }
 
-func (r *Router) Group(prefix string, handlers ...fiber.Handler) fiber.Router {
+func (r *Router) Group(prefix string, handlers ...any) fiber.Router {
 	return r.app.Group(prefix, handlers...)
 }
 
 func (r *Router) Use(args ...any) fiber.Router { return r.app.Use(args...) }
 
-func (r *Router) Static(prefix, root string, config ...fiber.Static) fiber.Router {
-	return r.app.Static(prefix, root, config...)
+// Static serves the files under root at prefix. Fiber v3 dropped app.Static
+// for the static middleware; this keeps the old call shape.
+func (r *Router) Static(prefix, root string, config ...static.Config) fiber.Router {
+	return r.app.Use(prefix, static.New(root, config...))
 }
 
 func (r *Router) Has(name string) bool {

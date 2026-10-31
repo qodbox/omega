@@ -3,9 +3,10 @@ package unit
 import (
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
 	"gorm.io/gorm"
 
@@ -37,7 +38,7 @@ func noteDB(t *testing.T) *gorm.DB {
 func statusOf(t *testing.T, app *fiber.App, path string) int {
 	t.Helper()
 
-	response, err := app.Test(httptest.NewRequest("GET", path, nil), 2000)
+	response, err := app.Test(httptest.NewRequest("GET", path, nil), fiber.TestConfig{Timeout: time.Duration(2000) * time.Millisecond})
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
 	}
@@ -47,7 +48,7 @@ func statusOf(t *testing.T, app *fiber.App, path string) int {
 func TestModelBindsAnExistingRow(t *testing.T) {
 	db := noteDB(t)
 	app := fiber.New()
-	app.Get("/notes/:id", router.Model[note](db), func(c *fiber.Ctx) error {
+	app.Get("/notes/:id", router.Model[note](db), func(c fiber.Ctx) error {
 		bound, ok := router.Bound[note](c)
 		if !ok {
 			return fiber.NewError(fiber.StatusInternalServerError, "rien de lie")
@@ -63,7 +64,7 @@ func TestModelBindsAnExistingRow(t *testing.T) {
 func TestModelAnswers404OnAMissingRow(t *testing.T) {
 	db := noteDB(t)
 	app := fiber.New()
-	app.Get("/notes/:id", router.Model[note](db), func(c *fiber.Ctx) error { return nil })
+	app.Get("/notes/:id", router.Model[note](db), func(c fiber.Ctx) error { return nil })
 
 	if status := statusOf(t, app, "/notes/999"); status != fiber.StatusNotFound {
 		t.Fatalf("status = %d, want 404", status)
@@ -74,7 +75,7 @@ func TestModelBindsOnACustomColumn(t *testing.T) {
 	db := noteDB(t)
 	app := fiber.New()
 	app.Get("/notes/:slug", router.Model[note](db, router.BindOptions{Param: "slug", Column: "slug"}),
-		func(c *fiber.Ctx) error {
+		func(c fiber.Ctx) error {
 			bound := router.MustBound[note](c)
 			return c.SendString(bound.Title)
 		})
@@ -91,8 +92,8 @@ func TestModelHonoursAScope(t *testing.T) {
 	db := noteDB(t)
 	app := fiber.New()
 	app.Get("/notes/:id", router.Model[note](db, router.BindOptions{
-		Scope: func(c *fiber.Ctx, tx *gorm.DB) *gorm.DB { return tx.Where("slug = ?", "impossible") },
-	}), func(c *fiber.Ctx) error { return nil })
+		Scope: func(c fiber.Ctx, tx *gorm.DB) *gorm.DB { return tx.Where("slug = ?", "impossible") },
+	}), func(c fiber.Ctx) error { return nil })
 
 	if status := statusOf(t, app, "/notes/1"); status != fiber.StatusNotFound {
 		t.Fatalf("le scope n'a pas ete applique: status = %d, want 404", status)
@@ -101,7 +102,7 @@ func TestModelHonoursAScope(t *testing.T) {
 
 func TestBoundReportsAbsenceInsteadOfPanicking(t *testing.T) {
 	app := fiber.New()
-	app.Get("/rien", func(c *fiber.Ctx) error {
+	app.Get("/rien", func(c fiber.Ctx) error {
 		if _, ok := router.Bound[note](c); ok {
 			return fiber.NewError(fiber.StatusInternalServerError, "un modele est apparu")
 		}

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
@@ -15,39 +15,44 @@ const (
 )
 
 func (r *Registry) Mount(group fiber.Router, middleware ...fiber.Handler) {
-	chain := func(handler fiber.Handler) []fiber.Handler {
-		return append(append([]fiber.Handler{}, middleware...), handler)
+	route := func(add func(string, any, ...any) fiber.Router, path string, handler fiber.Handler) fiber.Router {
+		chain := make([]any, 0, len(middleware)+1)
+		for _, m := range middleware {
+			chain = append(chain, m)
+		}
+		chain = append(chain, handler)
+		return add(path, chain[0], chain[1:]...)
 	}
 
 	for _, resource := range r.All() {
 		resource := resource
-		group.Get("/"+resource.Plural, chain(func(c *fiber.Ctx) error { return r.list(c, resource) })...).
+		route(group.Get, "/"+resource.Plural, func(c fiber.Ctx) error { return r.list(c, resource) }).
 			Name("api." + resource.Plural + ".index")
-		group.Get("/"+resource.Plural+"/:id", chain(func(c *fiber.Ctx) error { return r.show(c, resource) })...).
+		route(group.Get, "/"+resource.Plural+"/:id", func(c fiber.Ctx) error { return r.show(c, resource) }).
 			Name("api." + resource.Plural + ".show")
 
 		if !resource.writable() {
 			continue
 		}
 
-		group.Post("/"+resource.Plural, chain(func(c *fiber.Ctx) error { return r.create(c, resource) })...).
+		route(group.Post, "/"+resource.Plural, func(c fiber.Ctx) error { return r.create(c, resource) }).
 			Name("api." + resource.Plural + ".store")
-		group.Patch("/"+resource.Plural+"/:id", chain(func(c *fiber.Ctx) error { return r.update(c, resource) })...).
+		route(group.Patch, "/"+resource.Plural+"/:id", func(c fiber.Ctx) error { return r.update(c, resource) }).
 			Name("api." + resource.Plural + ".update")
-		group.Delete("/"+resource.Plural+"/:id", chain(func(c *fiber.Ctx) error { return r.destroy(c, resource) })...).
+		route(group.Delete, "/"+resource.Plural+"/:id", func(c fiber.Ctx) error { return r.destroy(c, resource) }).
 			Name("api." + resource.Plural + ".destroy")
 	}
 }
 
-func (r *Registry) query(c *fiber.Ctx, resource *Resource) *gorm.DB {
-	query := r.db.WithContext(c.UserContext()).Table(tableOf(r.db, resource))
+func (r *Registry) query(c fiber.Ctx, resource *Resource) *gorm.DB {
+	query := r.db.WithContext(c.Context()).Table(tableOf(r.db, resource))
 	if resource.softDeletes() {
 		query = query.Where(deletedAt + " IS NULL")
 	}
 	return query
 }
 
-func (r *Registry) list(c *fiber.Ctx, resource *Resource) error {
+func (r *Registry) list(c fiber.Ctx, resource *Resource) error {
 	query, err := applyFilters(r.query(c, resource), resource, c)
 	if err != nil {
 		return err
@@ -58,8 +63,8 @@ func (r *Registry) list(c *fiber.Ctx, resource *Resource) error {
 		return err
 	}
 
-	page := max(c.QueryInt("page", 1), 1)
-	perPage := c.QueryInt("per_page", defaultPerPage)
+	page := max(fiber.Query[int](c, "page", 1), 1)
+	perPage := fiber.Query[int](c, "per_page", defaultPerPage)
 	perPage = min(max(perPage, 1), maxPerPage)
 
 	if sort := c.Query("sort"); sort != "" {
@@ -93,7 +98,7 @@ func (r *Registry) list(c *fiber.Ctx, resource *Resource) error {
 	})
 }
 
-func (r *Registry) show(c *fiber.Ctx, resource *Resource) error {
+func (r *Registry) show(c fiber.Ctx, resource *Resource) error {
 	row, err := r.find(c, resource, c.Params("id"))
 	if err != nil {
 		return err
@@ -101,7 +106,7 @@ func (r *Registry) show(c *fiber.Ctx, resource *Resource) error {
 	return c.JSON(fiber.Map{"data": row})
 }
 
-func (r *Registry) find(c *fiber.Ctx, resource *Resource, id any) (map[string]any, error) {
+func (r *Registry) find(c fiber.Ctx, resource *Resource, id any) (map[string]any, error) {
 	row := map[string]any{}
 	if err := r.query(c, resource).Where("id = ?", id).Take(&row).Error; err != nil {
 		return nil, fiber.ErrNotFound
@@ -109,7 +114,7 @@ func (r *Registry) find(c *fiber.Ctx, resource *Resource, id any) (map[string]an
 	return resource.serialise(row), nil
 }
 
-func (r *Registry) create(c *fiber.Ctx, resource *Resource) error {
+func (r *Registry) create(c fiber.Ctx, resource *Resource) error {
 	payload, err := body(c, resource, false)
 	if err != nil {
 		return err
@@ -122,7 +127,7 @@ func (r *Registry) create(c *fiber.Ctx, resource *Resource) error {
 		}
 	}
 
-	if err := r.db.WithContext(c.UserContext()).
+	if err := r.db.WithContext(c.Context()).
 		Table(tableOf(r.db, resource)).Create(payload).Error; err != nil {
 		return writeRejected(c, resource, err)
 	}
@@ -134,7 +139,7 @@ func (r *Registry) create(c *fiber.Ctx, resource *Resource) error {
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"data": row})
 }
 
-func (r *Registry) update(c *fiber.Ctx, resource *Resource) error {
+func (r *Registry) update(c fiber.Ctx, resource *Resource) error {
 	payload, err := body(c, resource, true)
 	if err != nil {
 		return err
@@ -153,7 +158,7 @@ func (r *Registry) update(c *fiber.Ctx, resource *Resource) error {
 	return r.show(c, resource)
 }
 
-func (r *Registry) destroy(c *fiber.Ctx, resource *Resource) error {
+func (r *Registry) destroy(c fiber.Ctx, resource *Resource) error {
 	query := r.query(c, resource).Where("id = ?", c.Params("id"))
 
 	var result *gorm.DB
@@ -172,8 +177,8 @@ func (r *Registry) destroy(c *fiber.Ctx, resource *Resource) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func writeRejected(c *fiber.Ctx, resource *Resource, err error) error {
-	log.Ctx(c.UserContext()).Error().
+func writeRejected(c fiber.Ctx, resource *Resource, err error) error {
+	log.Ctx(c.Context()).Error().
 		Err(err).
 		Str("resource", resource.Plural).
 		Msg("api: the database refused the write")
@@ -182,9 +187,9 @@ func writeRejected(c *fiber.Ctx, resource *Resource, err error) error {
 		"The database refused this "+resource.Singular+".")
 }
 
-func body(c *fiber.Ctx, resource *Resource, partial bool) (map[string]any, error) {
+func body(c fiber.Ctx, resource *Resource, partial bool) (map[string]any, error) {
 	var raw map[string]any
-	if err := c.BodyParser(&raw); err != nil {
+	if err := c.Bind().Body(&raw); err != nil {
 		return nil, fiber.NewError(fiber.StatusBadRequest, "invalid JSON body")
 	}
 
@@ -221,10 +226,10 @@ var operators = map[string]string{
 	"__ne":   " <> ?",
 }
 
-func applyFilters(query *gorm.DB, resource *Resource, c *fiber.Ctx) (*gorm.DB, error) {
+func applyFilters(query *gorm.DB, resource *Resource, c fiber.Ctx) (*gorm.DB, error) {
 	var failure error
 
-	c.Context().QueryArgs().VisitAll(func(key, value []byte) {
+	c.RequestCtx().QueryArgs().VisitAll(func(key, value []byte) {
 		if failure != nil {
 			return
 		}

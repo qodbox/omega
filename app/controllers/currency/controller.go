@@ -1,7 +1,7 @@
 package currency
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"gorm.io/gorm"
 
 	"omega/app/models"
@@ -25,8 +25,8 @@ func NewController(db *gorm.DB, exchange *currency.Exchange, guard *jwt.Guard) *
 // Catalogue answers with what may be chosen and the day's rates. It is public:
 // a price list is shown before anyone signs in, and the rates are a central
 // bank's, not ours to keep.
-func (currencyc *Controller) Catalogue(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{"data": presenter.NewCatalogue(c.UserContext(), currencyc.exchange)})
+func (currencyc *Controller) Catalogue(c fiber.Ctx) error {
+	return c.JSON(fiber.Map{"data": presenter.NewCatalogue(c.Context(), currencyc.exchange)})
 }
 
 // Choose records the currency the caller reads amounts in.
@@ -34,7 +34,7 @@ func (currencyc *Controller) Catalogue(c *fiber.Ctx) error {
 // Whatever arrives is narrowed to the catalogue rather than refused outright
 // only when it is malformed: a code nobody quotes converts nothing, so storing
 // it would leave the account reading figures that never change.
-func (currencyc *Controller) Choose(c *fiber.Ctx) error {
+func (currencyc *Controller) Choose(c fiber.Ctx) error {
 	body, err := validation.Bind[request.Choose](c)
 	if err != nil {
 		return err
@@ -50,7 +50,7 @@ func (currencyc *Controller) Choose(c *fiber.Ctx) error {
 	}
 
 	chosen := currencyc.exchange.Normalise(body.Currency)
-	if err := currencyc.db.WithContext(c.UserContext()).
+	if err := currencyc.db.WithContext(c.Context()).
 		Model(&models.User{}).
 		Where("id = ?", user.ID).
 		Update("currency", chosen).Error; err != nil {
@@ -58,7 +58,7 @@ func (currencyc *Controller) Choose(c *fiber.Ctx) error {
 	}
 	user.Currency = chosen
 
-	rate, _ := currencyc.exchange.Rate(c.UserContext(), chosen)
+	rate, _ := currencyc.exchange.Rate(c.Context(), chosen)
 
 	return c.JSON(fiber.Map{"data": presenter.Choice{
 		Currency: chosen,
@@ -67,7 +67,7 @@ func (currencyc *Controller) Choose(c *fiber.Ctx) error {
 	}})
 }
 
-func (currencyc *Controller) caller(c *fiber.Ctx) (*models.User, error) {
+func (currencyc *Controller) caller(c fiber.Ctx) (*models.User, error) {
 	user, ok := currencyc.guard.User(c).(*models.User)
 	if !ok {
 		return nil, fiber.NewError(fiber.StatusUnauthorized, "Authentication required.")

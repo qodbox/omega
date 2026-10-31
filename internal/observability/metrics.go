@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type route struct {
@@ -49,7 +49,7 @@ func (m *Metrics) bucket(key string) *route {
 }
 
 func (m *Metrics) Middleware() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		started := time.Now()
 		m.inFlight.Add(1)
 
@@ -77,7 +77,7 @@ func (m *Metrics) Middleware() fiber.Handler {
 }
 
 func (m *Metrics) Handler() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Type("txt", "utf-8")
 		return c.SendString(m.Render())
 	}

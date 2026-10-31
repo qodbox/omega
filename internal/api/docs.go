@@ -4,7 +4,7 @@ import (
 	"embed"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 //go:embed assets
@@ -23,7 +23,7 @@ type Docs struct {
 }
 
 func (d Docs) Asset() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		name := c.Params("file")
 
 		if name == "" || strings.ContainsAny(name, `/\`) {
@@ -50,7 +50,7 @@ func (d Docs) Asset() fiber.Handler {
 }
 
 func (d Docs) SwaggerUI() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Type("html", "utf-8")
 		return c.SendString(strings.NewReplacer(
 			"{{title}}", d.Title,
@@ -61,7 +61,7 @@ func (d Docs) SwaggerUI() fiber.Handler {
 }
 
 func (d Docs) GraphiQL() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Type("html", "utf-8")
 		return c.SendString(strings.NewReplacer(
 			"{{title}}", d.Title,

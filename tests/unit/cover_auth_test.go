@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 
@@ -85,7 +85,7 @@ func aqsCovCall(t *testing.T, app *fiber.App, path, header string) *http.Respons
 	if header != "" {
 		request.Header.Set(fiber.HeaderAuthorization, header)
 	}
-	answer, err := app.Test(request, -1)
+	answer, err := app.Test(request, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
 		t.Fatalf("appel %s: %v", path, err)
 	}
@@ -197,7 +197,7 @@ func TestAqsCovOptionalAttachesTheClaimsWhenTheTokenIsValid(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get("/libre", guard.Optional(), func(c *fiber.Ctx) error {
+	app.Get("/libre", guard.Optional(), func(c fiber.Ctx) error {
 		claims, ok := auth.ClaimsOf(c)
 		if !ok {
 			return c.SendStatus(fiber.StatusTeapot)
@@ -220,10 +220,10 @@ func TestAqsCovRolesSeparatesAllowedFromForbidden(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get("/editor", guard.Required(), guard.Roles("editor"), func(c *fiber.Ctx) error {
+	app.Get("/editor", guard.Required(), guard.Roles("editor"), func(c fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Get("/admin", guard.Required(), guard.Roles("admin"), func(c *fiber.Ctx) error {
+	app.Get("/admin", guard.Required(), guard.Roles("admin"), func(c fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
@@ -252,7 +252,7 @@ func TestAqsCovExpiredAccessTokenIsReportedAsExpired(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get("/prive", guard.Required(), func(c *fiber.Ctx) error {
+	app.Get("/prive", guard.Required(), func(c fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
@@ -285,7 +285,7 @@ func TestAqsCovUserWalksEveryLoaderOutcome(t *testing.T) {
 			guard := auth.New(auth.Config{Secret: aqsCovSecret, Loader: tc.loader})
 
 			app := fiber.New()
-			app.Get("/moi", func(c *fiber.Ctx) error {
+			app.Get("/moi", func(c fiber.Ctx) error {
 				if tc.claims {
 					c.Locals(auth.LocalsClaims, auth.Claims{Role: "user"})
 				}
@@ -320,7 +320,7 @@ func TestAqsCovUserCachesTheLoadedValue(t *testing.T) {
 	})
 
 	app := fiber.New()
-	app.Get("/moi", func(c *fiber.Ctx) error {
+	app.Get("/moi", func(c fiber.Ctx) error {
 		c.Locals(auth.LocalsClaims, auth.Claims{})
 		guard.User(c)
 		guard.User(c)
@@ -342,7 +342,7 @@ func TestAqsCovFingerprintHandlesEveryHeaderShape(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get("/empreinte", func(c *fiber.Ctx) error { return c.SendString(auth.Fingerprint(c)) })
+	app.Get("/empreinte", func(c fiber.Ctx) error { return c.SendString(auth.Fingerprint(c)) })
 
 	cases := []struct {
 		name   string
@@ -369,7 +369,7 @@ func TestAqsCovFingerprintHandlesEveryHeaderShape(t *testing.T) {
 
 func TestAqsCovBearerStripsAtMostTwoPrefixes(t *testing.T) {
 	app := fiber.New()
-	app.Get("/empreinte", func(c *fiber.Ctx) error { return c.SendString(auth.Fingerprint(c)) })
+	app.Get("/empreinte", func(c fiber.Ctx) error { return c.SendString(auth.Fingerprint(c)) })
 
 	answer := aqsCovCall(t, app, "/empreinte", "Bearer Bearer aaa.bbb.0123456789abcdef0")
 	body := make([]byte, 64)

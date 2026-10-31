@@ -8,7 +8,7 @@ import (
 	"time"
 
 	client "github.com/fasthttp/websocket"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type wsClient struct {
@@ -51,7 +51,7 @@ func (c *wsClient) expect(t *testing.T, event string) map[string]any {
 func socketServer(t *testing.T, hub *Hub, handle Handler) *wsClient {
 	t.Helper()
 
-	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app := fiber.New(fiber.Config{})
 	app.Get("/ws", Upgrade(), hub.Socket(handle))
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

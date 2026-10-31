@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/brianvoe/gofakeit/v7"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"gorm.io/gorm"
 
 	"omega/app/models"
@@ -90,9 +90,9 @@ func TestRouterHasUseStaticAndURLOr(t *testing.T) {
 	app := fiber.New()
 	r := router.New(app)
 
-	r.Use(func(c *fiber.Ctx) error { return c.Next() })
+	r.Use(func(c fiber.Ctx) error { return c.Next() })
 	r.Static("/public", t.TempDir())
-	app.Get("/articles/:id", func(c *fiber.Ctx) error { return nil }).Name("articles.show")
+	app.Get("/articles/:id", func(c fiber.Ctx) error { return nil }).Name("articles.show")
 
 	if !r.Has("articles.show") {
 		t.Error("Has ne trouve pas une route nommee")
@@ -126,8 +126,8 @@ func TestGuardOptionalAndRoles(t *testing.T) {
 	guard := auth.New(auth.Config{Secret: "un-secret-de-test-assez-long-pour-signer"})
 
 	app := fiber.New()
-	app.Get("/libre", guard.Optional(), func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusNoContent) })
-	app.Get("/admin", guard.Roles("admin"), func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusNoContent) })
+	app.Get("/libre", guard.Optional(), func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusNoContent) })
+	app.Get("/admin", guard.Roles("admin"), func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusNoContent) })
 
 	if status := statusOf(t, app, "/libre"); status != fiber.StatusNoContent {
 		t.Errorf("Optional bloque une requete anonyme: %d", status)

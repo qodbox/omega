@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"omega"
 	"omega/internal/api"
@@ -89,7 +89,7 @@ func TestAllowWritesReopensADiscoveredTable(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/notes", bytes.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
 		t.Fatalf("requete: %v", err)
 	}

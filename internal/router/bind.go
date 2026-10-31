@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"gorm.io/gorm"
 )
 
@@ -17,7 +17,7 @@ type BindOptions struct {
 
 	Preload []string
 
-	Scope func(c *fiber.Ctx, tx *gorm.DB) *gorm.DB
+	Scope func(c fiber.Ctx, tx *gorm.DB) *gorm.DB
 }
 
 func Model[T any](db *gorm.DB, opts ...BindOptions) fiber.Handler {
@@ -32,13 +32,13 @@ func Model[T any](db *gorm.DB, opts ...BindOptions) fiber.Handler {
 		opt.Column = "id"
 	}
 
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		value := c.Params(opt.Param)
 		if value == "" {
 			return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("missing route parameter %q", opt.Param))
 		}
 
-		tx := db.WithContext(c.UserContext())
+		tx := db.WithContext(c.Context())
 		for _, relation := range opt.Preload {
 			tx = tx.Preload(relation)
 		}
@@ -60,12 +60,12 @@ func Model[T any](db *gorm.DB, opts ...BindOptions) fiber.Handler {
 	}
 }
 
-func Bound[T any](c *fiber.Ctx) (*T, bool) {
+func Bound[T any](c fiber.Ctx) (*T, bool) {
 	model, ok := c.Locals(modelKey[T]{}).(*T)
 	return model, ok
 }
 
-func MustBound[T any](c *fiber.Ctx) *T {
+func MustBound[T any](c fiber.Ctx) *T {
 	model, ok := Bound[T](c)
 	if !ok {
 		var zero T

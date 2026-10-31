@@ -3,7 +3,7 @@ package auth
 import (
 	"errors"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"omega/app/models"
 	presenter "omega/app/presenters/auth"
@@ -22,46 +22,46 @@ func NewController(service *service.Service, guard *jwt.Guard) *Controller {
 	return &Controller{auth: service, guard: guard}
 }
 
-func (a *Controller) Register(c *fiber.Ctx) error {
+func (a *Controller) Register(c fiber.Ctx) error {
 	body, err := validation.Bind[request.Register](c)
 	if err != nil {
 		return err
 	}
 
-	session, err := a.auth.Register(c.UserContext(), *body)
+	session, err := a.auth.Register(c.Context(), *body)
 	if err != nil {
 		return translate(err)
 	}
 	return c.Status(fiber.StatusCreated).JSON(sessionResponse(session))
 }
 
-func (a *Controller) Login(c *fiber.Ctx) error {
+func (a *Controller) Login(c fiber.Ctx) error {
 	body, err := validation.Bind[request.Login](c)
 	if err != nil {
 		return err
 	}
 
-	session, err := a.auth.Login(c.UserContext(), *body, c.IP())
+	session, err := a.auth.Login(c.Context(), *body, c.IP())
 	if err != nil {
 		return translate(err)
 	}
 	return c.JSON(sessionResponse(session))
 }
 
-func (a *Controller) Refresh(c *fiber.Ctx) error {
+func (a *Controller) Refresh(c fiber.Ctx) error {
 	body, err := validation.Bind[request.Refresh](c)
 	if err != nil {
 		return err
 	}
 
-	tokens, err := a.auth.Refresh(c.UserContext(), body.RefreshToken)
+	tokens, err := a.auth.Refresh(c.Context(), body.RefreshToken)
 	if err != nil {
 		return translate(err)
 	}
 	return c.JSON(fiber.Map{"tokens": tokens})
 }
 
-func (a *Controller) Logout(c *fiber.Ctx) error {
+func (a *Controller) Logout(c fiber.Ctx) error {
 	body, err := validation.Bind[request.Refresh](c)
 	if err != nil {
 		return err
@@ -71,7 +71,7 @@ func (a *Controller) Logout(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func (a *Controller) Me(c *fiber.Ctx) error {
+func (a *Controller) Me(c fiber.Ctx) error {
 	user, err := a.caller(c)
 	if err != nil {
 		return err
@@ -79,7 +79,7 @@ func (a *Controller) Me(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"data": presenter.NewUser(user)})
 }
 
-func (a *Controller) ChangePassword(c *fiber.Ctx) error {
+func (a *Controller) ChangePassword(c fiber.Ctx) error {
 	user, err := a.caller(c)
 	if err != nil {
 		return err
@@ -90,14 +90,14 @@ func (a *Controller) ChangePassword(c *fiber.Ctx) error {
 		return err
 	}
 
-	tokens, err := a.auth.ChangePassword(c.UserContext(), user, *body)
+	tokens, err := a.auth.ChangePassword(c.Context(), user, *body)
 	if err != nil {
 		return translate(err)
 	}
 	return c.JSON(fiber.Map{"tokens": tokens})
 }
 
-func (a *Controller) caller(c *fiber.Ctx) (*models.User, error) {
+func (a *Controller) caller(c fiber.Ctx) (*models.User, error) {
 	user, ok := a.guard.User(c).(*models.User)
 	if !ok {
 		return nil, fiber.NewError(fiber.StatusUnauthorized, "Authentication required.")

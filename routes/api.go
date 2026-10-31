@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gofiber/adaptor/v2"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	graphqlhandler "github.com/graphql-go/handler"
 
 	"omega"
@@ -48,19 +48,19 @@ func RegisterAPI(app *omega.App) error {
 	}
 
 	group.Get("/metrics", app.Metrics.Handler()).Name("api.metrics")
-	group.Get("/stats", func(c *fiber.Ctx) error {
+	group.Get("/stats", func(c fiber.Ctx) error {
 		return c.JSON(app.Metrics.Snapshot())
 	}).Name("api.stats")
 	group.Get("/events", guard.Required(), app.Broadcast.Stream(0)).Name("api.events")
 	group.Get("/ws", guard.Required(), broadcast.Upgrade(), app.Broadcast.Socket(nil)).Name("api.ws")
 
 	group.Get("/health", health(app)).Name("api.health")
-	group.Get("/openapi.json", func(c *fiber.Ctx) error {
+	group.Get("/openapi.json", func(c fiber.Ctx) error {
 		return c.JSON(registry.OpenAPI(
 			app.Cfg.StringOr("app.name", "Omega")+" API", omega.Version, "/api"))
 	}).Name("api.openapi")
 
-	can := app.Policy.Middleware(func(c *fiber.Ctx) any { return guard.User(c) })
+	can := app.Policy.Middleware(func(c fiber.Ctx) any { return guard.User(c) })
 	omega.Bind("can", can)
 
 	registry.Mount(group, guard.Required(), api.Authorize(can))
@@ -79,12 +79,12 @@ func RegisterAPI(app *omega.App) error {
 }
 
 func health(app *omega.App) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		status := fiber.Map{"status": "ok", "version": omega.Version}
 
 		if app.DB != nil {
 			sqlDB, err := app.DB.DB()
-			if err != nil || sqlDB.PingContext(c.UserContext()) != nil {
+			if err != nil || sqlDB.PingContext(c.Context()) != nil {
 				status["status"] = "degraded"
 				status["database"] = "unreachable"
 				return c.Status(fiber.StatusServiceUnavailable).JSON(status)
@@ -129,9 +129,9 @@ func registerGraphQL(app *omega.App, registry *api.Registry, guard *auth.Guard) 
 
 // graphqlActor forces the authenticated user into Locals before the request
 // crosses into net/http. Guard.User resolves lazily, and the resolvers cannot
-// call it: all they hold is a context, not a *fiber.Ctx.
+// call it: all they hold is a context, not a fiber.Ctx.
 func graphqlActor(guard *auth.Guard) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		guard.User(c)
 		return c.Next()
 	}
@@ -141,7 +141,7 @@ func graphqlAuth(app *omega.App, guard *auth.Guard) fiber.Handler {
 	required := guard.Required()
 	public := app.Cfg.BoolOr("api.public_introspection", true)
 
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		if public && api.IntrospectionOnly(c.Body()) {
 			return c.Next()
 		}

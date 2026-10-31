@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func waitFor(t *testing.T, what string, condition func() bool) {
@@ -22,7 +22,7 @@ func waitFor(t *testing.T, what string, condition func() bool) {
 }
 
 func streamApp(hub *Hub) *fiber.App {
-	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app := fiber.New(fiber.Config{})
 	app.Get("/events", hub.Stream(20*time.Millisecond))
 	return app
 }
@@ -34,7 +34,7 @@ func TestStreamRegistersThenReleasesItsSubscriber(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = app.Test(httptest.NewRequest("GET", "/events", nil), 2000)
+		_, _ = app.Test(httptest.NewRequest("GET", "/events", nil), fiber.TestConfig{Timeout: time.Duration(2000) * time.Millisecond})
 	}()
 
 	waitFor(t, "l'abonne s'enregistre", func() bool { return hub.Count() == 1 })
@@ -52,7 +52,7 @@ func TestStreamSubscribesToTheRequestedChannels(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = app.Test(httptest.NewRequest("GET", "/events?channels=mon%20canal,%20autre%20", nil), 2000)
+		_, _ = app.Test(httptest.NewRequest("GET", "/events?channels=mon%20canal,%20autre%20", nil), fiber.TestConfig{Timeout: time.Duration(2000) * time.Millisecond})
 	}()
 
 	waitFor(t, "l'abonne s'enregistre", func() bool { return hub.Count() == 1 })
@@ -79,7 +79,7 @@ func TestStreamWithoutChannelsReceivesEverything(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = app.Test(httptest.NewRequest("GET", "/events", nil), 2000)
+		_, _ = app.Test(httptest.NewRequest("GET", "/events", nil), fiber.TestConfig{Timeout: time.Duration(2000) * time.Millisecond})
 	}()
 
 	waitFor(t, "l'abonne s'enregistre", func() bool { return hub.Count() == 1 })
@@ -102,7 +102,7 @@ func TestShutdownIsSafeTwiceAndWithoutSubscribers(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = app.Test(httptest.NewRequest("GET", "/events", nil), 2000)
+		_, _ = app.Test(httptest.NewRequest("GET", "/events", nil), fiber.TestConfig{Timeout: time.Duration(2000) * time.Millisecond})
 	}()
 
 	waitFor(t, "l'abonne s'enregistre", func() bool { return hub.Count() == 1 })

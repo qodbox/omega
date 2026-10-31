@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"omega/internal/policy"
 )
@@ -163,17 +163,17 @@ func TestCovMiddlewareGuardsTheRoute(t *testing.T) {
 	}
 
 	for _, item := range cases {
-		guard := r.Middleware(func(*fiber.Ctx) any { return item.actor })
+		guard := r.Middleware(func(fiber.Ctx) any { return item.actor })
 
 		app := fiber.New()
-		app.Get("/", guard("posts.delete"), func(c *fiber.Ctx) error {
+		app.Get("/", guard("posts.delete"), func(c fiber.Ctx) error {
 			if c.Locals(policy.Local) == nil {
 				t.Errorf("%s: l'acteur doit etre depose dans le contexte", item.name)
 			}
 			return c.SendStatus(fiber.StatusOK)
 		})
 
-		response, err := app.Test(httptest.NewRequest("GET", "/", nil), -1)
+		response, err := app.Test(httptest.NewRequest("GET", "/", nil), fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 		if err != nil {
 			t.Fatalf("%s: %v", item.name, err)
 		}

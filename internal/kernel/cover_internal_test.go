@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/rs/zerolog"
 
 	"omega/internal/validation"
@@ -132,12 +132,12 @@ func TestRequestIDIsEmptyWhenNothingSetIt(t *testing.T) {
 	app := fiber.New()
 
 	var seen string
-	app.Get("/", func(c *fiber.Ctx) error {
+	app.Get("/", func(c fiber.Ctx) error {
 		seen = requestID(c)
 		return c.SendStatus(fiber.StatusOK)
 	})
 
-	if _, err := app.Test(httptest.NewRequest("GET", "/", nil), -1); err != nil {
+	if _, err := app.Test(httptest.NewRequest("GET", "/", nil), fiber.TestConfig{Timeout: 0, FailOnTimeout: false}); err != nil {
 		t.Fatal(err)
 	}
 	if seen != "" {
@@ -149,13 +149,13 @@ func TestRequestIDReadsWhatTheMiddlewareStored(t *testing.T) {
 	app := fiber.New()
 
 	var seen string
-	app.Get("/", func(c *fiber.Ctx) error {
+	app.Get("/", func(c fiber.Ctx) error {
 		c.Locals(RequestIDKey, "abc-123")
 		seen = requestID(c)
 		return c.SendStatus(fiber.StatusOK)
 	})
 
-	if _, err := app.Test(httptest.NewRequest("GET", "/", nil), -1); err != nil {
+	if _, err := app.Test(httptest.NewRequest("GET", "/", nil), fiber.TestConfig{Timeout: 0, FailOnTimeout: false}); err != nil {
 		t.Fatal(err)
 	}
 	if seen != "abc-123" {
@@ -167,12 +167,12 @@ func TestRateKeyFallsBackToTheAddress(t *testing.T) {
 	app := fiber.New()
 
 	var seen string
-	app.Get("/", func(c *fiber.Ctx) error {
+	app.Get("/", func(c fiber.Ctx) error {
 		seen = rateKey(c)
 		return c.SendStatus(fiber.StatusOK)
 	})
 
-	if _, err := app.Test(httptest.NewRequest("GET", "/", nil), -1); err != nil {
+	if _, err := app.Test(httptest.NewRequest("GET", "/", nil), fiber.TestConfig{Timeout: 0, FailOnTimeout: false}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(seen, "ip:") {
@@ -184,21 +184,21 @@ func TestRateKeySeparatesTwoTokens(t *testing.T) {
 	app := fiber.New()
 
 	var seen string
-	app.Get("/", func(c *fiber.Ctx) error {
+	app.Get("/", func(c fiber.Ctx) error {
 		seen = rateKey(c)
 		return c.SendStatus(fiber.StatusOK)
 	})
 
 	first := httptest.NewRequest("GET", "/", nil)
 	first.Header.Set("Authorization", "Bearer entete.charge.signature-un-0123456789")
-	if _, err := app.Test(first, -1); err != nil {
+	if _, err := app.Test(first, fiber.TestConfig{Timeout: 0, FailOnTimeout: false}); err != nil {
 		t.Fatal(err)
 	}
 	one := seen
 
 	second := httptest.NewRequest("GET", "/", nil)
 	second.Header.Set("Authorization", "Bearer entete.charge.signature-deux-9876543210")
-	if _, err := app.Test(second, -1); err != nil {
+	if _, err := app.Test(second, fiber.TestConfig{Timeout: 0, FailOnTimeout: false}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -496,9 +496,9 @@ func TestErrorHandlerShapesEachFailure(t *testing.T) {
 
 	for _, item := range cases {
 		app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler(zerolog.Nop(), false, false)})
-		app.Get("/", func(c *fiber.Ctx) error { return item.err })
+		app.Get("/", func(c fiber.Ctx) error { return item.err })
 
-		response, err := app.Test(httptest.NewRequest("GET", "/", nil), -1)
+		response, err := app.Test(httptest.NewRequest("GET", "/", nil), fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 		if err != nil {
 			t.Fatalf("%s: %v", item.name, err)
 		}
@@ -521,9 +521,9 @@ func TestErrorHandlerHidesInternalsUnlessDebugging(t *testing.T) {
 	secret := "connexion refusee vers 10.0.0.1"
 
 	quiet := fiber.New(fiber.Config{ErrorHandler: ErrorHandler(zerolog.Nop(), false, false)})
-	quiet.Get("/", func(c *fiber.Ctx) error { return errors.New(secret) })
+	quiet.Get("/", func(c fiber.Ctx) error { return errors.New(secret) })
 
-	response, err := quiet.Test(httptest.NewRequest("GET", "/", nil), -1)
+	response, err := quiet.Test(httptest.NewRequest("GET", "/", nil), fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -535,9 +535,9 @@ func TestErrorHandlerHidesInternalsUnlessDebugging(t *testing.T) {
 	}
 
 	loud := fiber.New(fiber.Config{ErrorHandler: ErrorHandler(zerolog.Nop(), true, false)})
-	loud.Get("/", func(c *fiber.Ctx) error { return errors.New(secret) })
+	loud.Get("/", func(c fiber.Ctx) error { return errors.New(secret) })
 
-	response, err = loud.Test(httptest.NewRequest("GET", "/", nil), -1)
+	response, err = loud.Test(httptest.NewRequest("GET", "/", nil), fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
 		t.Fatal(err)
 	}
