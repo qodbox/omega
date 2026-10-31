@@ -1,7 +1,7 @@
 package {{.Package}}
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"omega"
 )
@@ -12,6 +12,6 @@ func NewController() *Controller {
 	return &Controller{}
 }
 
-func ({{.Var}}c *Controller) Index(c *fiber.Ctx) error {
+func ({{.Var}}c *Controller) Index(c fiber.Ctx) error {
 	return c.JSON(omega.Map{"data": []any{}})
 }

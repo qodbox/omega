@@ -2,7 +2,7 @@
 
 <p align="center">
   A Go framework for JSON APIs.<br>
-  Fiber · GORM · REST + OpenAPI + GraphQL · JWT
+  Fiber v3 · GORM · REST + OpenAPI + GraphQL · JWT
 </p>
 
 <p align="center">
@@ -184,12 +184,12 @@ omega/
 
 ```go
 // 1. the controller does exactly three things
-func (a *AuthController) Register(c *fiber.Ctx) error {
+func (a *AuthController) Register(c fiber.Ctx) error {
     body, err := validation.Bind[requests.Register](c)  // parse + validate
     if err != nil {
         return err                                       // 422 rendered by the kernel
     }
-    session, err := a.auth.Register(c.UserContext(), *body)  // call
+    session, err := a.auth.Register(c.Context(), *body)  // call
     if err != nil {
         return translate(err)
     }
@@ -528,7 +528,8 @@ the first successful sign-in; an hourly task purges expired attempts.
 
 Behind a reverse proxy, set `APP_PROXY_HEADER` and `APP_TRUSTED_PROXIES` —
 otherwise every request shares the proxy's address and the per-address limit
-becomes useless.
+becomes useless. The header is read only on requests coming from an address in
+`APP_TRUSTED_PROXIES`, so setting `APP_PROXY_HEADER` alone has no effect.
 
 ## Choosing your frontend
 

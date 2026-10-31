@@ -1,7 +1,7 @@
 package {{.Package}}
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"omega"
 	"omega/app/models"
@@ -19,33 +19,33 @@ func NewController(svc *service.Service) *Controller {
 	return &Controller{ {{.Var}}s: svc}
 }
 
-func ({{.Var}}c *Controller) Index(c *fiber.Ctx) error {
-	records, err := {{.Var}}c.{{.Var}}s.All(c.UserContext())
+func ({{.Var}}c *Controller) Index(c fiber.Ctx) error {
+	records, err := {{.Var}}c.{{.Var}}s.All(c.Context())
 	if err != nil {
 		return err
 	}
 	return c.JSON(omega.Map{"data": presenter.NewViews(records)})
 }
 
-func ({{.Var}}c *Controller) Store(c *fiber.Ctx) error {
+func ({{.Var}}c *Controller) Store(c fiber.Ctx) error {
 	body, err := validation.Bind[request.Payload](c)
 	if err != nil {
 		return err
 	}
 
-	record, err := {{.Var}}c.{{.Var}}s.Create(c.UserContext(), *body)
+	record, err := {{.Var}}c.{{.Var}}s.Create(c.Context(), *body)
 	if err != nil {
 		return err
 	}
 	return c.Status(fiber.StatusCreated).JSON(omega.Map{"data": presenter.NewView(record)})
 }
 
-func ({{.Var}}c *Controller) Show(c *fiber.Ctx) error {
+func ({{.Var}}c *Controller) Show(c fiber.Ctx) error {
 	record := omega.Bound[models.{{.Name}}](c)
 	return c.JSON(omega.Map{"data": presenter.NewView(record)})
 }
 
-func ({{.Var}}c *Controller) Update(c *fiber.Ctx) error {
+func ({{.Var}}c *Controller) Update(c fiber.Ctx) error {
 	record := omega.Bound[models.{{.Name}}](c)
 
 	body, err := validation.Bind[request.Payload](c)
@@ -53,17 +53,17 @@ func ({{.Var}}c *Controller) Update(c *fiber.Ctx) error {
 		return err
 	}
 
-	updated, err := {{.Var}}c.{{.Var}}s.Update(c.UserContext(), record, *body)
+	updated, err := {{.Var}}c.{{.Var}}s.Update(c.Context(), record, *body)
 	if err != nil {
 		return err
 	}
 	return c.JSON(omega.Map{"data": presenter.NewView(updated)})
 }
 
-func ({{.Var}}c *Controller) Destroy(c *fiber.Ctx) error {
+func ({{.Var}}c *Controller) Destroy(c fiber.Ctx) error {
 	record := omega.Bound[models.{{.Name}}](c)
 
-	if err := {{.Var}}c.{{.Var}}s.Delete(c.UserContext(), record); err != nil {
+	if err := {{.Var}}c.{{.Var}}s.Delete(c.Context(), record); err != nil {
 		return err
 	}
 	return c.SendStatus(fiber.StatusNoContent)
