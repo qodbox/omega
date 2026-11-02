@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MoonIcon, SunIcon } from 'lucide-vue-next'
+import { MoonIcon, SunIcon } from '@lucide/vue'
 
 const { theme, set } = useTheme()
 const { t } = useI18n()

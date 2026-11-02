@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LanguagesIcon } from 'lucide-vue-next'
+import { LanguagesIcon } from '@lucide/vue'
 
 const { locale, locales, setLocale, t } = useI18n()
 </script>

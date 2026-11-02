@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BadgeCheckIcon, ShieldCheckIcon, UsersIcon } from 'lucide-vue-next'
+import { BadgeCheckIcon, ShieldCheckIcon, UsersIcon } from '@lucide/vue'
 import { api } from '~/lib/api'
 
 definePageMeta({ layout: 'dashboard', middleware: 'auth' })

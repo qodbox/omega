@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BoxesIcon, DatabaseIcon, ShieldCheckIcon, ZapIcon } from 'lucide-vue-next'
+import { BoxesIcon, DatabaseIcon, ShieldCheckIcon, ZapIcon } from '@lucide/vue'
 
 const { t } = useI18n()
 

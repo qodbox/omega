@@ -6,7 +6,7 @@ import {
   NetworkIcon,
   UsersIcon,
   XIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 const { t } = useI18n()
 const { user, signOut } = useAuth()

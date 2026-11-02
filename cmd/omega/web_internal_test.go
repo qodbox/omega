@@ -266,3 +266,40 @@ func TestEveryStackPinsItsDevPort(t *testing.T) {
 		}
 	}
 }
+
+func TestEveryStackInstallsReproducibly(t *testing.T) {
+	for _, target := range stacks {
+		raw, err := webkit.ReadFile("webkit/" + target.name + "/.npmrc")
+		if err != nil {
+			t.Errorf("%s: .npmrc manquant", target.name)
+			continue
+		}
+		for _, setting := range []string{"ignore-scripts=true", "save-exact=true"} {
+			if !strings.Contains(string(raw), setting) {
+				t.Errorf("%s: .npmrc sans %s", target.name, setting)
+			}
+		}
+
+		manifest, err := webkit.ReadFile("webkit/" + target.name + "/package.json")
+		if err != nil {
+			t.Errorf("%s: package.json manquant", target.name)
+			continue
+		}
+		var pkg struct {
+			Dependencies    map[string]string `json:"dependencies"`
+			DevDependencies map[string]string `json:"devDependencies"`
+		}
+		if err := json.Unmarshal(manifest, &pkg); err != nil {
+			t.Errorf("%s: package.json illisible: %v", target.name, err)
+			continue
+		}
+		for _, deps := range []map[string]string{pkg.Dependencies, pkg.DevDependencies} {
+			for name, version := range deps {
+				// A range resolves differently from one scaffold to the next.
+				if strings.ContainsAny(version, "^~<>=*| ") || strings.Contains(version, "-") {
+					t.Errorf("%s: %s@%s n'est pas une version stable exacte", target.name, name, version)
+				}
+			}
+		}
+	}
+}
