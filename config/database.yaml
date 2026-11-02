@@ -4,6 +4,10 @@
 # available through omega.Connection("name").
 default: ${DB_CONNECTION:-sqlite}
 
+# serve refuses to start while migrations are pending. Empty means "true in
+# production, a warning elsewhere".
+require_migrated: ${DB_REQUIRE_MIGRATED:-}
+
 log_level: ${DB_LOG_LEVEL:-warn}
 slow_threshold: 200ms
 
