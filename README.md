@@ -80,9 +80,9 @@ go run ./cmd/omega dev
 
 ## The documentation follows the migrations
 
-Omega reads the schema of the database it connects to at boot and publishes one
-resource per table. Creating a table is enough to get its CRUD, its OpenAPI
-description and its GraphQL schema — without writing a line of code:
+Omega reads the schema of the database it connects to at boot and can publish
+one resource per table. Creating a table is enough to get its read endpoints,
+its OpenAPI description and its GraphQL schema — without writing a line of code:
 
 ```bash
 go run ./cmd/omega make:model Post   # model + migration
@@ -90,21 +90,150 @@ go run ./cmd/omega migrate
 go run ./cmd/omega routes            # /api/posts is already there
 ```
 
-A table can also be declared by hand, which gives it a chosen name and
-explicitly hidden columns:
+### Discovery modes
+
+Discovery is convenient while prototyping and dangerous in production: every
+table it publishes is reachable by any caller the policies let through. It is
+set in `config/api.yaml` (or `API_DISCOVERY`):
+
+| `api.discovery` | Published |
+|---|---|
+| `all` | every table that is not internal |
+| `none` | nothing: only resources declared with `api.Register` |
+| `allowlist` | only the tables listed in `api.discovery_tables` (`API_DISCOVERY_TABLES=rates,providers`) |
+
+Left empty, the mode is `all` in local and testing, and **`none` when
+`APP_ENV=production`**. An unknown value stops the boot. Every table published by
+discovery is logged at warn level at each boot, so it shows up in the logs an
+operator reads.
+
+A discovered table is read-only (list and show). Internal tables are never
+published, even when allow-listed: `migrations`, `jobs`, `refresh_tokens`,
+`login_attempts`, the billing tables, and the like.
+
+### Declaring a resource
+
+A table declared by hand is always published, whatever the mode:
 
 ```go
-api.Register[models.User](registry, "users", "user", "password")
+api.Register[models.User](registry, "users", "user", "password") // hidden columns
+
+api.RegisterWith[models.Order](registry, "orders", "order",
+	api.Owner("user_id"),                          // row-level ownership
+	api.Actions(api.ActionList, api.ActionView, api.ActionCreate),
+	api.Guarded("status"),                         // written by <plural>.any only
+	api.Hidden("provider_reference"),
+	api.Visible("phone"),                          // lift a default PII hiding
+)
+
+api.RegisterWith[models.Rate](registry, "rates", "rate", api.ReadOnly())
 ```
 
-What discovery guards by default: internal tables (`migrations`,
-`refresh_tokens`) are never published, and any column named `password`,
-`secret`, `token`, `*_hash` or `*_key` is hidden by convention.
+The same options reach a discovered table: `registry.Configure("payouts",
+api.Owner("user_id"))`. `registry.AllowWrites("notes")` still reopens the writes
+of a discovered table.
 
-One honest limit: SQLite declares booleans as `numeric`, indistinguishable from
-a decimal, so a discovered boolean column is typed `number`. On PostgreSQL and
-MySQL the type is exact. Declaring the model with `api.Register` gives the right
-type everywhere.
+| Option | Effect |
+|---|---|
+| `ReadOnly()` | list and show only; no POST, PATCH, DELETE route, no GraphQL mutation |
+| `Actions(...)` | only the actions named (`list`, `view`, `create`, `update`, `delete`) are routed, documented and present in GraphQL |
+| `Owner("user_id")` | list, show, update, delete scoped to `WHERE user_id = <actor id>`; create stamps the column with the actor id, whatever the client sent; update cannot move a row to someone else. An actor holding `<plural>.any` is not scoped and may choose the owner |
+| `Guarded(...)` | shown, but only written by actors holding `<plural>.any` |
+| `Hidden(...)` | never served, filtered, sorted on or written |
+| `Visible(...)` | serves a column the default PII rules hide (never one `Hidden` named) |
+
+A row outside the actor's scope answers **404**, never 403: its existence is not
+theirs to learn. The actor id is the `ID` field (or `ID()` method) of the actor,
+then its `Key()`; `registry.IdentifyWith(func(actor any) any)` overrides it.
+
+### What is hidden by default
+
+- Secrets, on every resource: `password`, `secret`, `token`, `api_key`, `pin`,
+  `otp`, `iban`, `*_hash`, `*_key`, `*_token`, `*_code`...
+- Personal data, on every resource: `phone*`, `mobile*`, `msisdn`, `*_phone`,
+  `address*`, `*_address` (a wallet address included), `ip`, `ip_address`,
+  `*_ip`, `date_of_birth`, `dob`, `national_id`, `passport*`, `document*`,
+  `kyc*`. `Visible(...)` lifts it on a resource that must serve one.
+- Emails, on discovered tables only: a registered model is a deliberate act
+  (the users resource serves its email on purpose), a table that merely exists
+  is not.
+- A registered model only ever serves the fields it describes: a column the
+  struct leaves out or tags `json:"-"` never leaves the server.
+
+### Writes
+
+The generated writes validate every value against its column:
+
+- unknown, read-only, hidden or guarded fields are **ignored** and logged at
+  debug level — rejecting them would break clients that send back what they
+  read (`id`, `created_at`), and ignoring them writes nothing the resource does
+  not allow;
+- objects and arrays are refused (422) for scalar columns;
+- text longer than the column (`VARCHAR(n)`, `gorm:"size:n"`) is refused;
+- integers, booleans and floats must be of their type (a number written as a
+  string is accepted);
+- `DECIMAL`/`NUMERIC` columns are exact: bodies are decoded with
+  `json.Number`, never `float64`; the value travels as a string in both
+  directions (`"amount": "0.000000000000000001"`), is checked against the
+  declared precision and scale, and PostgreSQL reads it back as text. SQLite
+  stores NUMERIC as a 15-digit REAL, so on SQLite a decimal with more than 15
+  significant digits is refused rather than rounded.
+
+### Queries
+
+`?name=Ada` filters on any visible column; suffixes add operators: `__gt`,
+`__gte`, `__lt`, `__lte`, `__ne`, `__in` (comma separated, at most 100 values),
+`__contains`, `__starts`, `__ends` (the text is literal: `%` and `_` match
+themselves) and `__like` (`%` and `_` are wildcards, `\%` and `\_` the literal
+characters, at most 8 wildcards). At most 10 filters per request, patterns of
+128 characters, `per_page` up to 200. Sorting on a hidden column is refused.
+`?count=false` skips the `COUNT(*)` and omits `meta.total` and `meta.last_page`
+on tables too large to count at every page.
+
+### Policies on generated resources
+
+Every generated route asks the policies `<plural>.<action>`, with `list`,
+`view`, `create`, `update`, `delete`, and deny by default. List and create are
+asked before the handler; view, update and delete are asked once the row is
+loaded, **with the row as subject** — the model itself for a registered
+resource, the column map for a discovered table:
+
+```go
+gate.Define("orders.update", func(ctx context.Context, actor, subject any) bool {
+	order, ok := subject.(*models.Order)
+	return ok && order.Status != "settled"
+})
+gate.Grant(models.RoleUser, "orders.list", "orders.view", "orders.create")
+gate.Grant(models.RoleSupport, "orders.any") // every user's orders
+```
+
+Beware of `orders.*`: a resource wildcard grants `orders.any` too, and lifts the
+ownership scope.
+
+The users resource is declared with `Owner("id")`: a member lists and reads
+their own account only, and cannot write their `role`.
+
+### GraphQL
+
+`/graphql` serves the same registry, through the same checks: abilities,
+ownership, row subjects, hidden columns and write validation are shared code,
+not a copy. Decimals are `String` in the schema. Before anything executes, a
+request is bounded:
+
+| `config/api.yaml` | Default | Refuses |
+|---|---|---|
+| `graphql.max_depth` | 15 | deeper nesting (GraphiQL's introspection needs 15) |
+| `graphql.max_fields` | 500 | more fields, fragments expanded |
+| `graphql.max_root_fields` | 10 | more top-level fields — aliases count |
+| `graphql.max_complexity` | 10000 | a list costs its `limit` times the fields it selects |
+
+One JSON object per request: batches (a JSON array), queries in the URL and
+non-JSON bodies are refused.
+
+One honest limit: SQLite declares booleans as bare `numeric`, so a discovered
+column of that type is typed `number` (a `NUMERIC(p,s)` is a decimal). On
+PostgreSQL and MySQL the type is exact. Declaring the model with `api.Register`
+gives the right type everywhere.
 
 ## Authentication
 
@@ -650,9 +779,26 @@ omega.Cfg().Int("app.port")
 omega.Cfg().String("auth.secret")
 ```
 
-Environment variables win, and `.env` is loaded automatically. For SQLite,
-`DB_SQLITE_PATH` is a file path; `DB_DATABASE` remains the database name for
-PostgreSQL and MySQL.
+Environment variables win, and `.env` is loaded automatically. The generated
+API reads `config/api.yaml`:
+
+```yaml
+discovery: ${API_DISCOVERY:-}                # all | none | allowlist; empty: none in production
+discovery_tables: ${API_DISCOVERY_TABLES:-}  # for allowlist
+limits:
+  max_filters: 10
+  max_in_values: 100
+  max_pattern_length: 128
+  max_wildcards: 8
+graphql:
+  max_depth: 15
+  max_fields: 500
+  max_root_fields: 10
+  max_complexity: 10000
+```
+
+For SQLite, `DB_SQLITE_PATH` is a file path; `DB_DATABASE` remains the database
+name for PostgreSQL and MySQL.
 
 ## Extensibility
 
