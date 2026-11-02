@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -14,152 +17,289 @@ const (
 	maxPerPage     = 200
 )
 
+// registryLocal marks a request as served by a registry route, so Authorize
+// knows the handler will ask the policies itself, with the row as subject.
+type registryLocal struct{}
+
 func (r *Registry) Mount(group fiber.Router, middleware ...fiber.Handler) {
+	mark := func(c fiber.Ctx) error {
+		c.Locals(registryLocal{}, r)
+		return c.Next()
+	}
+
 	route := func(add func(string, any, ...any) fiber.Router, path string, handler fiber.Handler) fiber.Router {
 		chain := make([]any, 0, len(middleware)+1)
 		for _, m := range middleware {
 			chain = append(chain, m)
 		}
 		chain = append(chain, handler)
-		return add(path, chain[0], chain[1:]...)
+		return add(path, mark, chain...)
 	}
 
 	for _, resource := range r.All() {
 		resource := resource
-		route(group.Get, "/"+resource.Plural, func(c fiber.Ctx) error { return r.list(c, resource) }).
-			Name("api." + resource.Plural + ".index")
-		route(group.Get, "/"+resource.Plural+"/:id", func(c fiber.Ctx) error { return r.show(c, resource) }).
-			Name("api." + resource.Plural + ".show")
-
-		if !resource.writable() {
-			continue
+		if resource.Allows(ActionList) {
+			route(group.Get, "/"+resource.Plural, func(c fiber.Ctx) error { return r.list(c, resource) }).
+				Name("api." + resource.Plural + ".index")
 		}
-
-		route(group.Post, "/"+resource.Plural, func(c fiber.Ctx) error { return r.create(c, resource) }).
-			Name("api." + resource.Plural + ".store")
-		route(group.Patch, "/"+resource.Plural+"/:id", func(c fiber.Ctx) error { return r.update(c, resource) }).
-			Name("api." + resource.Plural + ".update")
-		route(group.Delete, "/"+resource.Plural+"/:id", func(c fiber.Ctx) error { return r.destroy(c, resource) }).
-			Name("api." + resource.Plural + ".destroy")
+		if resource.Allows(ActionView) {
+			route(group.Get, "/"+resource.Plural+"/:id", func(c fiber.Ctx) error { return r.show(c, resource) }).
+				Name("api." + resource.Plural + ".show")
+		}
+		if resource.Allows(ActionCreate) {
+			route(group.Post, "/"+resource.Plural, func(c fiber.Ctx) error { return r.create(c, resource) }).
+				Name("api." + resource.Plural + ".store")
+		}
+		if resource.Allows(ActionUpdate) {
+			route(group.Patch, "/"+resource.Plural+"/:id", func(c fiber.Ctx) error { return r.update(c, resource) }).
+				Name("api." + resource.Plural + ".update")
+		}
+		if resource.Allows(ActionDelete) {
+			route(group.Delete, "/"+resource.Plural+"/:id", func(c fiber.Ctx) error { return r.destroy(c, resource) }).
+				Name("api." + resource.Plural + ".destroy")
+		}
 	}
 }
 
-func (r *Registry) query(c fiber.Ctx, resource *Resource) *gorm.DB {
-	query := r.db.WithContext(c.Context()).Table(tableOf(r.db, resource))
-	if resource.softDeletes() {
-		query = query.Where(deletedAt + " IS NULL")
+// gated reports whether a policy gate is configured.
+func (r *Registry) gated() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.gate != nil && r.actorFrom != nil
+}
+
+// restBegin resolves the caller of a REST route. The actor travels in fiber's
+// Locals, which are fasthttp user values: the RequestCtx is the context that
+// carries them, the same one the GraphQL adaptor hands to the resolvers.
+func (r *Registry) restBegin(c fiber.Ctx, resource *Resource, action string) (*access, error) {
+	granted, err := r.begin(c.Context(), c.RequestCtx(), resource, action, false)
+	return granted, restError(err)
+}
+
+func restError(err error) error {
+	if err == nil {
+		return nil
 	}
-	return query
+	var forbidden forbiddenError
+	var rejected invalidError
+	switch {
+	case errors.Is(err, errUnauthenticated):
+		return fiber.NewError(fiber.StatusUnauthorized, "Authentication required.")
+	case errors.Is(err, errNotFound):
+		return fiber.ErrNotFound
+	case errors.Is(err, errInvalidJSON):
+		return fiber.NewError(fiber.StatusBadRequest, "invalid JSON body")
+	case errors.As(err, &forbidden):
+		return fiber.NewError(fiber.StatusForbidden, "You may not "+forbidden.ability+".")
+	case errors.As(err, &rejected):
+		return fiber.NewError(fiber.StatusUnprocessableEntity, rejected.message)
+	}
+	return err
+}
+
+func queryParameters(c fiber.Ctx) [][2]string {
+	parameters := [][2]string{}
+	for key, value := range c.RequestCtx().QueryArgs().All() {
+		parameters = append(parameters, [2]string{string(key), string(value)})
+	}
+	return parameters
 }
 
 func (r *Registry) list(c fiber.Ctx, resource *Resource) error {
-	query, err := applyFilters(r.query(c, resource), resource, c)
+	granted, err := r.restBegin(c, resource, ActionList)
 	if err != nil {
 		return err
 	}
 
+	query, err := applyFilters(r.scope(c.Context(), resource, granted), resource, r.Limits(), queryParameters(c))
+	if err != nil {
+		return restError(err)
+	}
+
+	counted := c.Query("count") != "false"
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return err
+	if counted {
+		if err := query.Count(&total).Error; err != nil {
+			return err
+		}
 	}
 
 	page := max(fiber.Query[int](c, "page", 1), 1)
 	perPage := fiber.Query[int](c, "per_page", defaultPerPage)
 	perPage = min(max(perPage, 1), maxPerPage)
 
-	if sort := c.Query("sort"); sort != "" {
-		column := strings.TrimPrefix(sort, "-")
-		if !resource.has(column) {
-			return fiber.NewError(fiber.StatusUnprocessableEntity, "unknown sort column "+column)
-		}
-		direction := " asc"
-		if strings.HasPrefix(sort, "-") {
-			direction = " desc"
-		}
-		query = query.Order(column + direction)
+	query, err = sorted(query, resource, c.Query("sort"))
+	if err != nil {
+		return restError(err)
 	}
 
 	rows := []map[string]any{}
-	if err := query.Limit(perPage).Offset((page - 1) * perPage).Find(&rows).Error; err != nil {
+	if err := readable(query, resource).Limit(perPage).Offset((page - 1) * perPage).Find(&rows).Error; err != nil {
 		return err
 	}
 	for _, row := range rows {
 		resource.serialise(row)
 	}
 
-	return c.JSON(fiber.Map{
-		"data": rows,
-		"meta": fiber.Map{
-			"total":     total,
-			"page":      page,
-			"per_page":  perPage,
-			"last_page": lastPage(total, perPage),
-		},
-	})
+	meta := fiber.Map{"page": page, "per_page": perPage}
+	if counted {
+		meta["total"] = total
+		meta["last_page"] = lastPage(total, perPage)
+	}
+	return c.JSON(fiber.Map{"data": rows, "meta": meta})
+}
+
+// sorted orders on a visible column: sorting on a hidden one would leak its
+// order, a classic oracle on hashes and secrets.
+func sorted(query *gorm.DB, resource *Resource, sort string) (*gorm.DB, error) {
+	if sort == "" {
+		return query, nil
+	}
+	column := strings.TrimPrefix(sort, "-")
+	if !resource.filterable(column) {
+		return nil, invalid("unknown sort column %s", column)
+	}
+	direction := " asc"
+	if strings.HasPrefix(sort, "-") {
+		direction = " desc"
+	}
+	return query.Order(quote(query, columnOf(resource, column)) + direction), nil
+}
+
+// fetch loads a row the caller may reach and asks the policies about it. A row
+// outside the actor's scope is a 404, never a 403: its existence is not theirs
+// to learn.
+func (r *Registry) fetch(ctx context.Context, resource *Resource, granted *access, action string, id any) (map[string]any, error) {
+	row, err := r.load(ctx, resource, granted, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.authorizeRow(ctx, resource, granted, action, row); err != nil {
+		return nil, err
+	}
+	return row, nil
 }
 
 func (r *Registry) show(c fiber.Ctx, resource *Resource) error {
-	row, err := r.find(c, resource, c.Params("id"))
+	granted, err := r.restBegin(c, resource, ActionView)
 	if err != nil {
 		return err
 	}
-	return c.JSON(fiber.Map{"data": row})
-}
-
-func (r *Registry) find(c fiber.Ctx, resource *Resource, id any) (map[string]any, error) {
-	row := map[string]any{}
-	if err := r.query(c, resource).Where("id = ?", id).Take(&row).Error; err != nil {
-		return nil, fiber.ErrNotFound
+	row, err := r.fetch(c.Context(), resource, granted, ActionView, c.Params("id"))
+	if err != nil {
+		return restError(err)
 	}
-	return resource.serialise(row), nil
+	return c.JSON(fiber.Map{"data": resource.serialise(row)})
 }
 
 func (r *Registry) create(c fiber.Ctx, resource *Resource) error {
-	payload, err := body(c, resource, false)
+	granted, err := r.restBegin(c, resource, ActionCreate)
 	if err != nil {
 		return err
 	}
+	raw, err := decodeBody(c.Body())
+	if err != nil {
+		return restError(err)
+	}
+	payload, err := resource.payload(c.Context(), granted, raw, false, r.exactDigits())
+	if err != nil {
+		return restError(err)
+	}
 
+	if err := r.insert(c.Context(), resource, payload); err != nil {
+		return writeRejected(c.Context(), resource, err)
+	}
+
+	// A table without an id column cannot be read back: the row is written, the
+	// answer is a 404 as it has always been.
+	row, err := r.load(c.Context(), resource, granted, insertedID(payload))
+	if err != nil {
+		return fiber.ErrNotFound
+	}
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"data": resource.serialise(row)})
+}
+
+func (r *Registry) insert(ctx context.Context, resource *Resource, payload map[string]any) error {
 	now := time.Now()
 	for _, column := range []string{createdAt, updatedAt} {
 		if resource.hasColumn(column) {
 			payload[column] = now
 		}
 	}
-
-	if err := r.db.WithContext(c.Context()).
-		Table(tableOf(r.db, resource)).Create(payload).Error; err != nil {
-		return writeRejected(c, resource, err)
+	query := r.db.WithContext(ctx).Table(tableOf(r.db, resource))
+	if dialect(query) == "postgres" && resource.hasColumn("id") {
+		// Without a model gorm cannot know the key: PostgreSQL has no
+		// LastInsertId, so the id is asked back explicitly.
+		query = query.Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}})
 	}
-
-	row, err := r.find(c, resource, insertedID(payload))
-	if err != nil {
-		return err
-	}
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"data": row})
+	return query.Create(payload).Error
 }
 
 func (r *Registry) update(c fiber.Ctx, resource *Resource) error {
-	payload, err := body(c, resource, true)
+	granted, err := r.restBegin(c, resource, ActionUpdate)
 	if err != nil {
 		return err
 	}
+	raw, err := decodeBody(c.Body())
+	if err != nil {
+		return restError(err)
+	}
+	payload, err := resource.payload(c.Context(), granted, raw, true, r.exactDigits())
+	if err != nil {
+		return restError(err)
+	}
+
+	id := c.Params("id")
+	if _, err := r.fetch(c.Context(), resource, granted, ActionUpdate, id); err != nil {
+		return restError(err)
+	}
+
+	affected, err := r.change(c.Context(), resource, granted, id, payload)
+	if err != nil {
+		return writeRejected(c.Context(), resource, err)
+	}
+	if affected == 0 {
+		return fiber.ErrNotFound
+	}
+
+	row, err := r.load(c.Context(), resource, granted, id)
+	if err != nil {
+		return restError(err)
+	}
+	return c.JSON(fiber.Map{"data": resource.serialise(row)})
+}
+
+func (r *Registry) change(ctx context.Context, resource *Resource, granted *access, id any, payload map[string]any) (int64, error) {
 	if resource.hasColumn(updatedAt) {
 		payload[updatedAt] = time.Now()
 	}
-
-	result := r.query(c, resource).Where("id = ?", c.Params("id")).Updates(payload)
-	if result.Error != nil {
-		return writeRejected(c, resource, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return fiber.ErrNotFound
-	}
-	return r.show(c, resource)
+	result := r.scope(ctx, resource, granted).Where("id = ?", id).Updates(payload)
+	return result.RowsAffected, result.Error
 }
 
 func (r *Registry) destroy(c fiber.Ctx, resource *Resource) error {
-	query := r.query(c, resource).Where("id = ?", c.Params("id"))
+	granted, err := r.restBegin(c, resource, ActionDelete)
+	if err != nil {
+		return err
+	}
+
+	id := c.Params("id")
+	if _, err := r.fetch(c.Context(), resource, granted, ActionDelete, id); err != nil {
+		return restError(err)
+	}
+
+	affected, err := r.remove(c.Context(), resource, granted, id)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fiber.ErrNotFound
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (r *Registry) remove(ctx context.Context, resource *Resource, granted *access, id any) (int64, error) {
+	query := r.scope(ctx, resource, granted).Where("id = ?", id)
 
 	var result *gorm.DB
 	if resource.softDeletes() {
@@ -167,45 +307,17 @@ func (r *Registry) destroy(c fiber.Ctx, resource *Resource) error {
 	} else {
 		result = query.Delete(nil)
 	}
-
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return fiber.ErrNotFound
-	}
-	return c.SendStatus(fiber.StatusNoContent)
+	return result.RowsAffected, result.Error
 }
 
-func writeRejected(c fiber.Ctx, resource *Resource, err error) error {
-	log.Ctx(c.Context()).Error().
+func writeRejected(ctx context.Context, resource *Resource, err error) error {
+	log.Ctx(ctx).Error().
 		Err(err).
 		Str("resource", resource.Plural).
 		Msg("api: the database refused the write")
 
 	return fiber.NewError(fiber.StatusUnprocessableEntity,
 		"The database refused this "+resource.Singular+".")
-}
-
-func body(c fiber.Ctx, resource *Resource, partial bool) (map[string]any, error) {
-	var raw map[string]any
-	if err := c.Bind().Body(&raw); err != nil {
-		return nil, fiber.NewError(fiber.StatusBadRequest, "invalid JSON body")
-	}
-
-	payload := map[string]any{}
-	for _, field := range resource.Fields {
-		if field.ReadOnly || resource.Hidden[field.Name] {
-			continue
-		}
-		if value, ok := raw[field.Name]; ok {
-			payload[field.Column] = value
-		}
-	}
-	if len(payload) == 0 && !partial {
-		return nil, fiber.NewError(fiber.StatusUnprocessableEntity, "no writable field in the body")
-	}
-	return payload, nil
 }
 
 func insertedID(payload map[string]any) any {
@@ -215,55 +327,6 @@ func insertedID(payload map[string]any) any {
 		}
 	}
 	return nil
-}
-
-var operators = map[string]string{
-	"__like": " LIKE ?",
-	"__gt":   " > ?",
-	"__gte":  " >= ?",
-	"__lt":   " < ?",
-	"__lte":  " <= ?",
-	"__ne":   " <> ?",
-}
-
-func applyFilters(query *gorm.DB, resource *Resource, c fiber.Ctx) (*gorm.DB, error) {
-	var failure error
-
-	c.RequestCtx().QueryArgs().VisitAll(func(key, value []byte) {
-		if failure != nil {
-			return
-		}
-		name := string(key)
-		switch name {
-		case "page", "per_page", "sort":
-			return
-		}
-
-		column, clause := name, " = ?"
-		for suffix, expression := range operators {
-			if strings.HasSuffix(name, suffix) {
-				column, clause = strings.TrimSuffix(name, suffix), expression
-				break
-			}
-		}
-		if strings.HasSuffix(name, "__in") {
-			column = strings.TrimSuffix(name, "__in")
-			if !resource.filterable(column) {
-				failure = fiber.NewError(fiber.StatusUnprocessableEntity, "unknown filter "+column)
-				return
-			}
-			query = query.Where(column+" IN ?", strings.Split(string(value), ","))
-			return
-		}
-
-		if !resource.filterable(column) {
-			failure = fiber.NewError(fiber.StatusUnprocessableEntity, "unknown filter "+column)
-			return
-		}
-		query = query.Where(column+clause, string(value))
-	})
-
-	return query, failure
 }
 
 func tableOf(db *gorm.DB, resource *Resource) string {

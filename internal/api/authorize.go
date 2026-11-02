@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -11,11 +9,23 @@ import (
 
 type Ability func(string) fiber.Handler
 
+// Authorize asks the policies "<plural>.<action>" before a generated route
+// runs. On a route mounted by a Registry that has a gate (Protect), the row
+// actions — view, update, delete — are left to the handler, which asks the very
+// same question once the row is loaded, with the row as subject: a rule
+// written as Define("orders.update", func(ctx, actor, order) bool) then sees
+// the order, not nil.
 func Authorize(can Ability) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		resource, action := abilityOf(c)
 		if resource == "" {
 			return c.Next()
+		}
+		if registry, ok := c.Locals(registryLocal{}).(*Registry); ok && registry.gated() {
+			switch action {
+			case ActionView, ActionUpdate, ActionDelete:
+				return c.Next()
+			}
 		}
 		return can(resource + "." + action)(c)
 	}
@@ -69,28 +79,4 @@ func (r *Registry) Protect(gate Gate, actor ActorFrom) {
 	defer r.mu.Unlock()
 	r.gate = gate
 	r.actorFrom = actor
-}
-
-// permits mirrors abilityOf's naming, so GraphQL and REST ask the policies the
-// very same question: "<plural>.<action>".
-func (r *Registry) permits(ctx context.Context, resource *Resource, action string) error {
-	r.mu.RLock()
-	gate, actorFrom := r.gate, r.actorFrom
-	r.mu.RUnlock()
-
-	ability := resource.Plural + "." + action
-
-	if gate == nil || actorFrom == nil {
-		return fmt.Errorf("graphql: no policy gate is configured, refusing %s", ability)
-	}
-
-	actor := actorFrom(ctx)
-	if actor == nil {
-		return errors.New("graphql: authentication required")
-	}
-
-	if !gate(ctx, actor, ability) {
-		return fmt.Errorf("you may not %s", ability)
-	}
-	return nil
 }

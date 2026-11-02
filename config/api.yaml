@@ -1,0 +1,33 @@
+# The generated REST and GraphQL resources.
+#
+# Which tables the schema discovery publishes, read-only, next to the models
+# registered with api.Register:
+#   all        every table that is not internal (migrations, jobs, tokens...)
+#   none       nothing: only registered resources are served
+#   allowlist  only the tables listed in discovery_tables
+# Left empty, it is "all" in local and testing, and "none" when APP_ENV is
+# production. Every table discovery publishes is logged at warn level at boot.
+discovery: ${API_DISCOVERY:-}
+
+# A YAML list, or a comma separated API_DISCOVERY_TABLES.
+discovery_tables: ${API_DISCOVERY_TABLES:-}
+
+# What one request may ask of the generated endpoints. 0 keeps the default.
+limits:
+  # REST: filters per query string, values in one __in, characters in a LIKE
+  # pattern, wildcards in one __like.
+  max_filters: ${API_MAX_FILTERS:-10}
+  max_in_values: ${API_MAX_IN_VALUES:-100}
+  max_pattern_length: ${API_MAX_PATTERN_LENGTH:-128}
+  max_wildcards: ${API_MAX_WILDCARDS:-8}
+
+graphql:
+  # Nesting depth and fields once fragments are expanded; the defaults leave
+  # room for GraphiQL's introspection query.
+  max_depth: ${GRAPHQL_MAX_DEPTH:-15}
+  max_fields: ${GRAPHQL_MAX_FIELDS:-500}
+  # Top-level fields in one operation, aliases included: ten aliased copies of
+  # the same list are ten queries.
+  max_root_fields: ${GRAPHQL_MAX_ROOT_FIELDS:-10}
+  # Estimated cost: a list counts its limit times the fields it selects.
+  max_complexity: ${GRAPHQL_MAX_COMPLEXITY:-10000}

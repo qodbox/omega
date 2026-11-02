@@ -26,6 +26,10 @@ func Register(gate *policy.Registry) {
 		return false, false
 	})
 
+	// The users resource is declared with api.Owner("id"): these grants reach
+	// the member's own account only. "users.any" lifts that scope; admins hold
+	// it through the wildcard. Never grant "users.*" to members: a resource
+	// wildcard includes "users.any".
 	gate.Grant(models.RoleUser,
 		"users.list",
 		"users.view",
@@ -34,6 +38,7 @@ func Register(gate *policy.Registry) {
 
 	gate.Grant(models.RoleAdmin, "*")
 
+	// On the generated routes the subject is the loaded *models.User.
 	gate.Define("users.update", func(ctx context.Context, actor, subject any) bool {
 		user, ok := actor.(*models.User)
 		if !ok {

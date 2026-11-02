@@ -17,10 +17,23 @@ import (
 
 func RegisterAPI(app *omega.App) error {
 	registry := api.NewRegistry(app.DB)
+	registry.SetLimits(apiLimits(app))
 
-	api.Register[models.User](registry, "users", "user", "password")
+	// A member reaches their own account only (Owner on id); users.any — held
+	// by admins through the wildcard — lifts the scope. The role and the
+	// verification date are written by admins alone.
+	api.RegisterWith[models.User](registry, "users", "user",
+		api.Hidden("password"),
+		api.Owner("id"),
+		api.Guarded("role", "email_verified_at"),
+	)
 
-	if err := registry.Discover(app.DB); err != nil {
+	discovery, err := api.ResolveDiscovery(app.Cfg.Env(),
+		app.Cfg.String("api.discovery"), app.Cfg.Get("api.discovery_tables"))
+	if err != nil {
+		return fmt.Errorf("routes: %w", err)
+	}
+	if _, err := registry.DiscoverWith(app.DB, discovery); err != nil {
 		return fmt.Errorf("routes: discovering the schema: %w", err)
 	}
 
@@ -63,19 +76,33 @@ func RegisterAPI(app *omega.App) error {
 	can := app.Policy.Middleware(func(c fiber.Ctx) any { return guard.User(c) })
 	omega.Bind("can", can)
 
-	registry.Mount(group, guard.Required(), api.Authorize(can))
-
-	// GraphQL serves the same registry, so it has to ask the same policies. REST
-	// gets that from the Authorize middleware; the resolvers get it from here.
-	// Fiber's Locals are fasthttp user values, which the net/http adaptor leaves
-	// on the request context, so the actor the middleware resolved is still
-	// readable once the resolvers run.
+	// REST and GraphQL ask the same gate. Authorize answers list and create
+	// up front; the handlers and the resolvers answer view, update and delete
+	// once the row is loaded, with the row as policy subject, and scope owned
+	// resources to the actor. Fiber's Locals are fasthttp user values, which
+	// both the REST handlers and the net/http adaptor read from the request
+	// context, so resolveActor must run first.
 	registry.Protect(
 		app.Policy.Allows,
 		func(ctx context.Context) any { return ctx.Value(auth.LocalsUser) },
 	)
 
+	registry.Mount(group, guard.Required(), resolveActor(guard), api.Authorize(can))
+
 	return registerGraphQL(app, registry, guard)
+}
+
+func apiLimits(app *omega.App) api.Limits {
+	return api.Limits{
+		MaxFilters:       app.Cfg.Int("api.limits.max_filters"),
+		MaxInValues:      app.Cfg.Int("api.limits.max_in_values"),
+		MaxPatternLength: app.Cfg.Int("api.limits.max_pattern_length"),
+		MaxWildcards:     app.Cfg.Int("api.limits.max_wildcards"),
+		MaxDepth:         app.Cfg.Int("api.graphql.max_depth"),
+		MaxFields:        app.Cfg.Int("api.graphql.max_fields"),
+		MaxRootFields:    app.Cfg.Int("api.graphql.max_root_fields"),
+		MaxComplexity:    app.Cfg.Int("api.graphql.max_complexity"),
+	}
 }
 
 func health(app *omega.App) fiber.Handler {
@@ -122,15 +149,15 @@ func registerGraphQL(app *omega.App, registry *api.Registry, guard *auth.Guard) 
 	})
 
 	app.Router.App().
-		Post("/graphql", graphqlAuth(app, guard), graphqlActor(guard), adaptor.HTTPHandler(handler)).
+		Post("/graphql", registry.GraphQLGuard(), graphqlAuth(app, guard), resolveActor(guard), adaptor.HTTPHandler(handler)).
 		Name("graphql")
 	return nil
 }
 
-// graphqlActor forces the authenticated user into Locals before the request
-// crosses into net/http. Guard.User resolves lazily, and the resolvers cannot
-// call it: all they hold is a context, not a fiber.Ctx.
-func graphqlActor(guard *auth.Guard) fiber.Handler {
+// resolveActor forces the authenticated user into Locals before the generated
+// handlers run. Guard.User resolves lazily, and neither the GraphQL resolvers
+// nor the registry can call it: all they hold is a context, not a fiber.Ctx.
+func resolveActor(guard *auth.Guard) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		guard.User(c)
 		return c.Next()

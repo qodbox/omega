@@ -24,17 +24,28 @@ func TestGraphQLRefusesWhatRESTRefuses(t *testing.T) {
 	s := boot(t)
 	s.signUp("gqlpolicy@integration.test")
 
-	rest := s.get("/api/login_attempts")
+	rest := s.post("/api/users", map[string]any{"name": "Intrus", "email": "intrus@integration.test"})
 	if rest.status != http.StatusForbidden {
-		t.Fatalf("REST doit refuser login_attempts: %d %s", rest.status, flat(rest.raw))
+		t.Fatalf("REST doit refuser users.create: %d %s", rest.status, flat(rest.raw))
 	}
 
-	answer := gql(t, s, "{ login_attempts { id identifier address } }")
-	if !strings.Contains(answer.raw, "you may not login_attempts.list") {
-		t.Fatalf("GraphQL doit refuser la meme table: %s", flat(answer.raw))
+	answer := gql(t, s, `mutation { create_user(name: "Intrus", email: "intrus@integration.test") { id } }`)
+	if !strings.Contains(answer.raw, "you may not users.create") {
+		t.Fatalf("GraphQL doit refuser la meme ecriture: %s", flat(answer.raw))
 	}
-	if strings.Contains(answer.raw, "@integration.test") {
-		t.Fatalf("des identifiants ont fuite malgre le refus: %s", flat(answer.raw))
+}
+
+// login_attempts is internal: neither transport publishes it.
+func TestLoginAttemptsAreNotPublished(t *testing.T) {
+	s := boot(t)
+	s.signUpAdmin("gqlattempts@integration.test")
+
+	if rest := s.get("/api/login_attempts"); rest.status != http.StatusNotFound {
+		t.Fatalf("REST publie login_attempts: %d %s", rest.status, flat(rest.raw))
+	}
+	answer := gql(t, s, "{ login_attempts { id } }")
+	if !strings.Contains(answer.raw, "Cannot query field") {
+		t.Fatalf("GraphQL publie login_attempts: %s", flat(answer.raw))
 	}
 }
 
