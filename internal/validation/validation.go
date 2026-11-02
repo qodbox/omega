@@ -3,6 +3,7 @@ package validation
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -16,6 +17,13 @@ func newValidator() *validator.Validate {
 
 	_ = v.RegisterValidation("notcommon", func(field validator.FieldLevel) bool {
 		return !IsCommonPassword(field.Field().String())
+	})
+
+	// maxbytes bounds the UTF-8 length, where max counts characters: bcrypt
+	// reads at most 72 bytes, and an accented password reaches that sooner.
+	_ = v.RegisterValidation("maxbytes", func(field validator.FieldLevel) bool {
+		limit, err := strconv.Atoi(field.Param())
+		return err == nil && len(field.Field().String()) <= limit
 	})
 
 	v.RegisterTagNameFunc(func(field reflect.StructField) string {
@@ -103,6 +111,8 @@ func message(failure validator.FieldError) string {
 			return fmt.Sprintf("At most %s characters are allowed.", failure.Param())
 		}
 		return fmt.Sprintf("The maximum is %s.", failure.Param())
+	case "maxbytes":
+		return fmt.Sprintf("At most %s bytes are allowed.", failure.Param())
 	case "eqfield":
 		return "The two fields do not match."
 	case "oneof":

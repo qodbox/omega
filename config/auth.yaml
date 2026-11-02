@@ -4,14 +4,41 @@
 # so every value here can be overridden by .env or by real env vars.
 
 # Signs every token. There is no default on purpose: booting without it is
-# refused rather than falling back to a predictable key.
+# refused rather than falling back to a predictable key, and so is a secret
+# shorter than 32 bytes (outside APP_ENV=testing). openssl rand -base64 48
 secret: ${AUTH_SECRET:-}
 
-# How long an access token is honoured. Short, because it cannot be revoked.
+# How long an access token is honoured. Short: signing out everywhere and a
+# password change refuse it at once (token version), but a stolen one that
+# nobody revokes lives this long.
 access_ttl: ${AUTH_ACCESS_TTL:-15m}
 
 # How long a refresh token stays valid. It is revocable, so it can be long.
 refresh_ttl: ${AUTH_REFRESH_TTL:-720h}
+
+# A refresh token is single-use. Presenting one that was already rotated is
+# treated as theft: the whole login (every token rotated from the same sign-in)
+# is revoked and a security warning is logged. The grace tolerates two tabs
+# racing to refresh with the same cookie: inside it a replay is refused but
+# revokes nothing. 0s is strict.
+reuse_grace: ${AUTH_REUSE_GRACE:-0s}
+
+# The cookie transport. On, POST /api/auth/login, /register, /refresh and the
+# OAuth callback answer with HttpOnly cookies (omega_access, omega_refresh)
+# plus a readable omega_csrf, and no token in the body. A client that keeps
+# its tokens itself sends "X-Omega-Auth: bearer" to get them in the body;
+# "Authorization: Bearer" requests are never checked for CSRF.
+cookies:
+  enabled: ${AUTH_COOKIES:-true}
+  # Leave empty for a host-only cookie. When the API sits on another
+  # subdomain than the frontend (api.example.com vs app.example.com), set the
+  # parent domain (example.com) so the frontend can read omega_csrf.
+  domain: ${AUTH_COOKIE_DOMAIN:-}
+  # Empty means on outside local and testing.
+  secure: ${AUTH_COOKIE_SECURE:-}
+  # Lax, Strict or None (None requires secure). The refresh cookie is always
+  # Strict and scoped to /api/auth.
+  same_site: ${AUTH_COOKIE_SAMESITE:-Lax}
 
 # Where a provider sends the caller back. Must match what is registered with
 # the provider, down to the scheme and the port.

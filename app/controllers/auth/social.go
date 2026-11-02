@@ -9,11 +9,18 @@ import (
 
 type SocialController struct {
 	auth      *service.Service
+	guard     *oauth.Guard
 	providers []string
 }
 
 func NewSocialController(service *service.Service, providers []string) *SocialController {
 	return &SocialController{auth: service, providers: providers}
+}
+
+// WithGuard lets the callback answer in cookies, like a local sign-in.
+func (s *SocialController) WithGuard(guard *oauth.Guard) *SocialController {
+	s.guard = guard
+	return s
 }
 
 func (s *SocialController) Providers(c fiber.Ctx) error {
@@ -45,7 +52,7 @@ func (s *SocialController) Callback(c fiber.Ctx) error {
 	if err != nil {
 		return translate(err)
 	}
-	return c.JSON(sessionResponse(session))
+	return answerSession(c, s.guard, fiber.StatusOK, session)
 }
 
 func (s *SocialController) knows(name string) bool {

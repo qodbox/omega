@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"time"
 
@@ -25,12 +26,39 @@ type Store interface {
 
 type Loader func(subject string) (any, error)
 
+// Versioned is a loaded user that carries a token version. An access token
+// signed with another version is refused, so bumping it signs the account out
+// everywhere at once.
+type Versioned interface {
+	AuthVersion() uint64
+}
+
+// Roled is a loaded user that carries its current role. The guard reads the
+// role from the user rather than trusting the one frozen in the token, so a
+// demotion takes effect on the next request.
+type Roled interface {
+	AuthRole() string
+}
+
 type Config struct {
 	Secret     string
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
 	Loader     Loader
 	Store      Store
+
+	// Cookies configures the cookie transport. Off by default here; the
+	// application turns it on from config/auth.yaml.
+	Cookies Cookies
+
+	// ReuseGrace is how long after a rotation the same refresh token may be
+	// replayed without being treated as stolen. Zero is strict. A replay inside
+	// the grace is still refused; it just does not revoke the family.
+	ReuseGrace time.Duration
+
+	// OnReuse is told when a rotated refresh token comes back, after its family
+	// has been revoked. Log it: it is a security event.
+	OnReuse func(subject, family string)
 }
 
 type Guard struct {
@@ -45,6 +73,18 @@ type Tokens struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
+// Grant is what a token pair is signed for.
+type Grant struct {
+	Subject string
+	Role    string
+
+	// Version is the account's current token version.
+	Version uint64
+
+	// Family is the login chain the refresh token joins. Empty starts one.
+	Family string
+}
+
 func New(cfg Config) *Guard {
 	if cfg.AccessTTL <= 0 {
 		cfg.AccessTTL = 15 * time.Minute
@@ -55,14 +95,21 @@ func New(cfg Config) *Guard {
 	return &Guard{cfg: cfg, secret: []byte(cfg.Secret)}
 }
 
+// Issue signs a fresh pair, reading the token version through the Loader.
 func (g *Guard) Issue(subject, role string) (Tokens, error) {
+	return g.IssueGrant(Grant{Subject: subject, Role: role, Version: g.versionOf(subject)})
+}
+
+// IssueGrant signs a fresh pair for an explicit grant.
+func (g *Guard) IssueGrant(grant Grant) (Tokens, error) {
 	now := time.Now()
 
 	access, err := Sign(g.secret, Claims{
-		Kind: KindAccess,
-		Role: role,
+		Kind:    KindAccess,
+		Role:    grant.Role,
+		Version: grant.Version,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   subject,
+			Subject:   grant.Subject,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(g.cfg.AccessTTL)),
 		},
@@ -75,12 +122,17 @@ func (g *Guard) Issue(subject, role string) (Tokens, error) {
 	if err != nil {
 		return Tokens{}, err
 	}
+	family := grant.Family
+	if family == "" {
+		family = id
+	}
 	expires := now.Add(g.cfg.RefreshTTL)
 
 	refresh, err := Sign(g.secret, Claims{
-		Kind: KindRefresh,
+		Kind:   KindRefresh,
+		Family: family,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   subject,
+			Subject:   grant.Subject,
 			ID:        id,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(expires),
@@ -90,10 +142,8 @@ func (g *Guard) Issue(subject, role string) (Tokens, error) {
 		return Tokens{}, err
 	}
 
-	if g.cfg.Store != nil {
-		if err := g.cfg.Store.Save(id, subject, expires); err != nil {
-			return Tokens{}, err
-		}
+	if err := g.save(id, grant.Subject, family, expires); err != nil {
+		return Tokens{}, err
 	}
 
 	return Tokens{
@@ -104,37 +154,104 @@ func (g *Guard) Issue(subject, role string) (Tokens, error) {
 	}, nil
 }
 
+func (g *Guard) save(id, subject, family string, expires time.Time) error {
+	switch store := g.cfg.Store.(type) {
+	case nil:
+		return nil
+	case FamilyStore:
+		return store.SaveFamily(id, subject, family, expires)
+	default:
+		return store.Save(id, subject, expires)
+	}
+}
+
+// AccessTTL is how long an access token lives.
+func (g *Guard) AccessTTL() time.Duration { return g.cfg.AccessTTL }
+
+// RefreshTTL is how long a refresh token lives.
+func (g *Guard) RefreshTTL() time.Duration { return g.cfg.RefreshTTL }
+
+// Rotate spends a refresh token and signs a new pair in the same family.
 func (g *Guard) Rotate(raw, role string) (Tokens, error) {
+	return g.rotate(raw, func(subject string) Grant {
+		return Grant{Subject: subject, Role: role, Version: g.versionOf(subject)}
+	})
+}
+
+// RotateGrant is Rotate for a caller that already loaded the account.
+func (g *Guard) RotateGrant(raw, role string, version uint64) (Tokens, error) {
+	return g.rotate(raw, func(subject string) Grant {
+		return Grant{Subject: subject, Role: role, Version: version}
+	})
+}
+
+func (g *Guard) rotate(raw string, grant func(subject string) Grant) (Tokens, error) {
 	claims, err := Verify(g.secret, raw, KindRefresh)
 	if err != nil {
 		return Tokens{}, err
 	}
 
-	if g.cfg.Store != nil {
-		live, err := g.cfg.Store.Exists(claims.ID)
+	family := claims.Family
+	switch store := g.cfg.Store.(type) {
+	case nil:
+	case FamilyStore:
+		live, usedAt, err := store.Consume(claims.ID, time.Now())
+		switch {
+		case errors.Is(err, ErrReused):
+			if g.cfg.ReuseGrace > 0 && time.Since(usedAt) <= g.cfg.ReuseGrace {
+				return Tokens{}, ErrSignature
+			}
+			if err := store.RevokeFamily(live); err != nil {
+				return Tokens{}, err
+			}
+			if g.cfg.OnReuse != nil {
+				g.cfg.OnReuse(claims.Subject, live)
+			}
+			return Tokens{}, ErrReused
+		case errors.Is(err, ErrUnknownToken):
+			return Tokens{}, ErrSignature
+		case err != nil:
+			return Tokens{}, err
+		}
+		family = live
+	default:
+		live, err := store.Exists(claims.ID)
 		if err != nil {
 			return Tokens{}, err
 		}
 		if !live {
 			return Tokens{}, ErrSignature
 		}
-		if err := g.cfg.Store.Revoke(claims.ID); err != nil {
+		if err := store.Revoke(claims.ID); err != nil {
 			return Tokens{}, err
 		}
+		family = ""
 	}
 
-	return g.Issue(claims.Subject, role)
+	next := grant(claims.Subject)
+	next.Family = family
+	return g.IssueGrant(next)
 }
 
+// Revoke signs out the login a refresh token belongs to: with a FamilyStore
+// the whole chain goes, so an older token of the same login cannot revive it.
 func (g *Guard) Revoke(raw string) error {
 	claims, err := Verify(g.secret, raw, KindRefresh)
 	if err != nil {
 		return err
 	}
-	if g.cfg.Store == nil {
+	switch store := g.cfg.Store.(type) {
+	case nil:
 		return nil
+	case FamilyStore:
+		family := claims.Family
+		if family == "" {
+			family = claims.ID
+		}
+		return store.RevokeFamily(family)
+	default:
+		return store.Revoke(claims.ID)
 	}
-	return g.cfg.Store.Revoke(claims.ID)
 }
 
 func (g *Guard) RevokeAll(subject string) error {
@@ -149,24 +266,78 @@ func (g *Guard) Subject(raw string) (string, error) {
 	return claims.Subject, err
 }
 
+// Required refuses a request without a valid access token. With a Loader, the
+// account is loaded once here (and cached for User): an access token whose
+// version is stale, or whose account is gone, is refused immediately.
 func (g *Guard) Required() fiber.Handler {
 	return func(c fiber.Ctx) error {
-		claims, err := g.authenticate(c)
-		if err != nil {
-			return unauthorized(err)
+		if err := g.Authenticate(c); err != nil {
+			return err
 		}
-		c.Locals(LocalsClaims, claims)
 		return c.Next()
 	}
+}
+
+// Authenticate is what Required checks, for a handler that decides itself
+// what happens next. It answers the error Required would send: 401, or 403
+// for a cookie-authenticated unsafe request without its CSRF token.
+func (g *Guard) Authenticate(c fiber.Ctx) error {
+	claims, err := g.authenticate(c)
+	if err != nil {
+		return refuse(err)
+	}
+	if err := g.admit(c, claims); err != nil {
+		return refuse(err)
+	}
+	return nil
 }
 
 func (g *Guard) Optional() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if claims, err := g.authenticate(c); err == nil {
-			c.Locals(LocalsClaims, claims)
+			if g.admit(c, claims) != nil {
+				c.Locals(LocalsClaims, nil)
+				c.Locals(LocalsUser, nil)
+				c.Locals(LocalsTransport, nil)
+			}
 		}
 		return c.Next()
 	}
+}
+
+// admit records the claims, then checks them against the stored account.
+func (g *Guard) admit(c fiber.Ctx, claims Claims) error {
+	c.Locals(LocalsClaims, claims)
+	if g.cfg.Loader == nil {
+		return nil
+	}
+
+	user := g.User(c)
+	if user == nil {
+		return ErrRevoked
+	}
+	if versioned, ok := user.(Versioned); ok && versioned.AuthVersion() != claims.Version {
+		return ErrRevoked
+	}
+	if roled, ok := user.(Roled); ok && roled.AuthRole() != claims.Role {
+		claims.Role = roled.AuthRole()
+		c.Locals(LocalsClaims, claims)
+	}
+	return nil
+}
+
+func (g *Guard) versionOf(subject string) uint64 {
+	if g.cfg.Loader == nil {
+		return 0
+	}
+	user, err := g.cfg.Loader(subject)
+	if err != nil {
+		return 0
+	}
+	if versioned, ok := user.(Versioned); ok {
+		return versioned.AuthVersion()
+	}
+	return 0
 }
 
 func (g *Guard) Roles(roles ...string) fiber.Handler {
@@ -187,8 +358,17 @@ func (g *Guard) Roles(roles ...string) fiber.Handler {
 	}
 }
 
+// authenticate reads the access token: from the Authorization header first
+// (bearer mode, no CSRF check), then from the omega_access cookie (cookie
+// mode, CSRF checked on unsafe methods).
 func (g *Guard) authenticate(c fiber.Ctx) (Claims, error) {
+	transport := TransportBearer
 	raw := bearer(c)
+
+	if raw == "" && g.cfg.Cookies.Enabled {
+		raw = c.Cookies(CookieAccess)
+		transport = TransportCookie
+	}
 	if raw == "" {
 		return Claims{}, ErrMalformed
 	}
@@ -198,6 +378,13 @@ func (g *Guard) authenticate(c fiber.Ctx) (Claims, error) {
 		return claims, err
 	}
 
+	if transport == TransportCookie && Unsafe(c.Method()) {
+		if err := CheckCSRF(c); err != nil {
+			return Claims{}, err
+		}
+	}
+
+	c.Locals(LocalsTransport, transport)
 	return claims, nil
 }
 
@@ -253,11 +440,19 @@ func bearer(c fiber.Ctx) string {
 	return raw
 }
 
-func unauthorized(err error) error {
-	if err == ErrExpired {
+// ErrRevoked is a valid access token whose account is gone or whose token
+// version was bumped since it was signed.
+var ErrRevoked = errors.New("auth: token revoked")
+
+func refuse(err error) error {
+	switch {
+	case errors.Is(err, ErrCSRF):
+		return fiber.NewError(fiber.StatusForbidden, CSRFMessage)
+	case errors.Is(err, ErrExpired), errors.Is(err, ErrRevoked):
 		return fiber.NewError(fiber.StatusUnauthorized, "Token expired.")
+	default:
+		return fiber.NewError(fiber.StatusUnauthorized, "Authentication required.")
 	}
-	return fiber.NewError(fiber.StatusUnauthorized, "Authentication required.")
 }
 
 func randomID() (string, error) {

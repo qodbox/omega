@@ -48,6 +48,7 @@ func TestRotatingTheEmailDoesNotEscapeTheThrottle(t *testing.T) {
 
 func TestRegisterAndPasswordAreThrottledToo(t *testing.T) {
 	t.Setenv("RATELIMIT_AUTH_MAX", "3")
+	t.Setenv("RATELIMIT_REFRESH_MAX", "3")
 	s := boot(t)
 
 	for _, route := range []string{"/api/auth/register", "/api/auth/refresh"} {
