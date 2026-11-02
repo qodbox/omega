@@ -145,11 +145,48 @@ func TestTheSharedClientCarriesTheWholeAuthFlow(t *testing.T) {
 	body := string(raw)
 	for _, piece := range []string{
 		"/auth/login", "/auth/register", "/auth/refresh", "/auth/logout", "/auth/me",
-		"omega.tokens", "Bearer ", "subscribe", "ApiError",
+		"/auth/csrf", `credentials: "include"`, "omega_csrf", "X-CSRF-Token",
+		"BroadcastChannel", "omega-auth", "withCredentials: true",
+		"subscribe", "ApiError", "safeNext",
 	} {
 		if !strings.Contains(body, piece) {
 			t.Errorf("le client partage n'implemente pas %q", piece)
 		}
+	}
+}
+
+func TestNoTokenEverReachesJavaScriptStorage(t *testing.T) {
+	// The session lives in HttpOnly cookies: anything an injected script can
+	// read, it can steal.
+	raw, err := webkit.ReadFile("webkit/shared/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"localStorage", "sessionStorage", "Authorization", "access_token", "refresh_token",
+	} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("le client partage manipule encore %q", forbidden)
+		}
+	}
+
+	err = fs.WalkDir(webkit, "webkit", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || strings.HasSuffix(path, "api-types.ts") {
+			return err
+		}
+		body, readErr := webkit.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		for _, forbidden := range []string{"readTokens", "writeTokens", "omega.tokens", "?token=", "&token="} {
+			if strings.Contains(string(body), forbidden) {
+				t.Errorf("%s: %q, un jeton lisible depuis JavaScript", path, forbidden)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

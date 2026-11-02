@@ -249,7 +249,7 @@ omega.Cfg().String("storage.root")      // config/storage.yaml`,
           ["omega make:middleware EnsureAdmin", "a Fiber middleware"],
           ["omega web:nuxt", "rebuild web/ as a Nuxt 4 SPA with shadcn-vue"],
           ["omega web:react", "rebuild web/ as a React 19 app with shadcn/ui"],
-          ["omega web:next", "rebuild web/ as a Next.js 15 app with shadcn/ui"],
+          ["omega web:next", "rebuild web/ as a Next.js 16 app with shadcn/ui"],
           ["omega web:nuxt --pm pnpm", "any of bun, pnpm, yarn or npm works"],
           ["omega make:policy Post", "who may do what — registers itself"],
           ["omega make:rule Siret", "a custom validation rule"],
@@ -473,6 +473,7 @@ DELETE    /api/posts/:id    api.posts.destroy`,
           ["GET /api/auth/me", "the bearer of the token"],
           ["POST /api/auth/password", "change it, signing every other session out"],
           ["GET /api/auth/{provider}", "start an OAuth sign-in"],
+          ["GET /api/auth/csrf", "set the CSRF cookie, called once at boot"],
         ],
       },
       {
@@ -494,6 +495,11 @@ GOOGLE_CLIENT_SECRET=...
         heading: "Protecting a route",
         body: `group.Get("/reports", guard.Required(), reports.Index)
 group.Delete("/users/:id", guard.Required(), guard.Roles("admin"), users.Destroy)`,
+      },
+      {
+        kind: "note",
+        heading: "In the browser, the session is a cookie",
+        body: "This interface never sees a token: the server sets them as HttpOnly cookies, so an injected script has nothing to steal. Unsafe methods echo the readable omega_csrf cookie in X-CSRF-Token. API clients that send Authorization: Bearer keep the token pair in the body and skip the CSRF check.",
       },
     ],
   },
@@ -755,7 +761,8 @@ url := omega.Storage().URL("invoices/42.pdf")`,
       {
         kind: "code",
         heading: "Subscribe from the browser",
-        body: `const stream = new EventSource("/api/events?channels=orders")
+        body: `// The access cookie authenticates the stream: no token in the URL.
+const stream = new EventSource("/api/events?channels=orders", { withCredentials: true })
 
 stream.addEventListener("created", (event) => {
   console.log(JSON.parse(event.data))
@@ -876,14 +883,14 @@ export type User = components["schemas"]["user"]`,
         heading: "The refresh that nobody sees",
         body: `// src/lib/api.ts
 if (response.status === 401 && auth && retry) {
-  const renewed = await refresh()
-  if (renewed) return request(path, { ...options, retry: false })
-  writeTokens(null)
+  // POST /auth/refresh with the HttpOnly refresh cookie, single-flight.
+  if (await refresh()) return request(path, { ...options, retry: false })
+  signedOut()
 }`,
       },
       {
         kind: "text",
-        body: "An expired access token is the normal case, not a failure: rotate once and replay. Only a refresh token that is also dead ends the session. One rotation is in flight at a time, even when ten requests fail together.",
+        body: "An expired access cookie is the normal case, not a failure: rotate once and replay. Only a refresh cookie that is also dead ends the session, and every other tab hears it. One rotation is in flight at a time, even when ten requests fail together.",
       },
     ],
   },

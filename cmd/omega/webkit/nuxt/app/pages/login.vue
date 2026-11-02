@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { EyeIcon, EyeOffIcon } from 'lucide-vue-next'
-import { ApiError } from '~/lib/api'
+import { EyeIcon, EyeOffIcon } from '@lucide/vue'
+import { ApiError, safeNext } from '~/lib/api'
 
 definePageMeta({ layout: 'default' })
 
 const { t } = useI18n()
 const { signIn, signUp } = useAuth()
 const toast = useToast()
+const route = useRoute()
 
 const tab = ref('signin')
 const pending = ref(false)
@@ -20,7 +21,8 @@ async function run(action: () => Promise<void>) {
   fields.value = {}
   try {
     await action()
-    await navigateTo('/dashboard')
+    // ?next= is attacker-controlled: only a same-origin path is followed.
+    await navigateTo(safeNext(route.query.next), { replace: true })
   }
   catch (error) {
     if (error instanceof ApiError) {

@@ -150,7 +150,10 @@ function DashboardLayout() {
       </div>
     )
   }
-  if (!user) return <Navigate to="/login" replace state={{ from: location }} />
+  if (!user) {
+    const next = encodeURIComponent(`${location.pathname}${location.search}`)
+    return <Navigate to={`/login?next=${next}`} replace />
+  }
 
   const heading = location.pathname.startsWith("/users") ? t("nav.users") : t("nav.dashboard")
 

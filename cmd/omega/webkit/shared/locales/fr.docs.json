@@ -238,7 +238,8 @@
         "r3c1": "retirer le refresh token",
         "r4c1": "le porteur du jeton",
         "r5c1": "le changer, en déconnectant toutes les autres sessions",
-        "r6c1": "démarrer une connexion OAuth"
+        "r6c1": "démarrer une connexion OAuth",
+        "r7c1": "poser le cookie CSRF, appelé une fois au démarrage"
       },
       "b1": {
         "heading": "Un refresh token est à usage unique",
@@ -249,6 +250,10 @@
       },
       "b3": {
         "heading": "Protéger une route"
+      },
+      "b4": {
+        "heading": "Dans le navigateur, la session est un cookie",
+        "body": "Cette interface ne voit jamais de jeton : le serveur les pose en cookies HttpOnly, un script injecté n'a donc rien à voler. Les méthodes non sûres renvoient le cookie lisible omega_csrf dans X-CSRF-Token. Les clients d'API qui envoient Authorization: Bearer gardent le couple de jetons dans le corps et échappent au contrôle CSRF."
       }
     },
     "validation": {
@@ -429,7 +434,7 @@
         "heading": "Le rafraîchissement que personne ne voit"
       },
       "b3": {
-        "body": "Un jeton d'accès expiré est le cas normal, pas un échec : on fait tourner une fois et on rejoue. Seul un refresh token mort aussi met fin à la session. Une seule rotation est en vol à la fois, même si dix requêtes échouent ensemble."
+        "body": "Un cookie d'accès expiré est le cas normal, pas un échec : on fait tourner une fois et on rejoue. Seul un cookie de refresh mort aussi met fin à la session, et tous les autres onglets l'apprennent. Une seule rotation est en vol à la fois, même si dix requêtes échouent ensemble."
       }
     },
     "i18n": {

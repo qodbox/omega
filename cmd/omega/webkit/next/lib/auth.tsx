@@ -1,9 +1,13 @@
 "use client"
 
-import { createContext, use, useCallback, useEffect, useMemo, useState } from "react"
+import { createContext, use, useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 
-import { api, readTokens, writeTokens, type User } from "./api"
+import { api, configureApi, currentUser, restoreSession, subscribe, type User } from "./api"
+
+// Only a public base URL may come from the environment: everything NEXT_PUBLIC_*
+// is inlined into the bundle shipped to every visitor.
+configureApi({ baseUrl: process.env.NEXT_PUBLIC_API_URL })
 
 type AuthValue = {
   user: User | null
@@ -16,56 +20,28 @@ type AuthValue = {
 const AuthContext = createContext<AuthValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<User | null>(currentUser)
   const [loading, setLoading] = useState(true)
 
-  const resolve = useCallback(async () => {
-    if (!readTokens()) {
-      setUser(null)
-      setLoading(false)
-      return
-    }
-    try {
-      const { data } = await api.me()
-      setUser(data)
-    } catch {
-      writeTokens(null)
-      setUser(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
   useEffect(() => {
-    void resolve()
-    // Another tab signing out must sign this one out too.
-    const onChange = () => void resolve()
-    window.addEventListener("omega:auth", onChange)
-    window.addEventListener("storage", onChange)
-    return () => {
-      window.removeEventListener("omega:auth", onChange)
-      window.removeEventListener("storage", onChange)
-    }
-  }, [resolve])
+    // The shared client owns the state (cookies, refresh, other tabs): this
+    // provider only mirrors it.
+    const unsubscribe = subscribe(setUser)
+    void restoreSession().finally(() => setLoading(false))
+    return unsubscribe
+  }, [])
 
   const value = useMemo<AuthValue>(
     () => ({
       user,
       loading,
       signIn: async (email, password) => {
-        const { data, tokens } = await api.login(email, password)
-        writeTokens(tokens)
-        setUser(data)
+        await api.login(email, password)
       },
       signUp: async (name, email, password) => {
-        const { data, tokens } = await api.register(name, email, password)
-        writeTokens(tokens)
-        setUser(data)
+        await api.register(name, email, password)
       },
-      signOut: async () => {
-        await api.logout()
-        setUser(null)
-      },
+      signOut: () => api.logout(),
     }),
     [user, loading],
   )
