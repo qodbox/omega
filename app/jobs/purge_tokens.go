@@ -10,6 +10,9 @@ import (
 	"omega/app/models"
 )
 
+// PurgeTokens deletes the expired refresh tokens. It is idempotent: running it
+// twice deletes nothing the second time. The query carries the job's context,
+// so a timeout or a shutdown cancels it.
 func PurgeTokens(db *gorm.DB, log zerolog.Logger) func(context.Context, []byte) error {
 	return func(ctx context.Context, payload []byte) error {
 		result := db.WithContext(ctx).

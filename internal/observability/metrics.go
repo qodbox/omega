@@ -138,6 +138,7 @@ func (m *Metrics) Render() string {
 			method, path, strconv.FormatFloat(seconds, 'f', 6, 64))
 	}
 
+	m.renderCollectors(&out)
 	return out.String()
 }
 
