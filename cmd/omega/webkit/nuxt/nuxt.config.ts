@@ -1,5 +1,7 @@
 import tailwindcss from '@tailwindcss/vite'
 
+import { securityHeaders } from './security'
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-08-25',
   ssr: false,
@@ -7,6 +9,18 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   vite: { plugins: [tailwindcss()] },
   nitro: { static: true },
+  // Only what may be read by every visitor: NUXT_PUBLIC_API_BASE, empty means
+  // same origin. Never put a secret under public.
+  runtimeConfig: {
+    public: { apiBase: '' },
+  },
+  // Applied wherever Nitro serves the app, and turned into _headers or
+  // equivalent by the presets that support it. The CSP itself is computed
+  // from the built page: see server/plugins/csp.ts. A plain static host needs
+  // the same headers configured by hand (README).
+  routeRules: {
+    '/**': { headers: securityHeaders({ production: process.env.NODE_ENV === 'production' }) },
+  },
   app: {
     head: {
       title: 'Omega',

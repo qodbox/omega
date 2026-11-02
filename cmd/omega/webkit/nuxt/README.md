@@ -4,7 +4,7 @@ L'application Nuxt 4 que consomme l'API JSON d'Omega. Elle n'en dépend que par
 HTTP : pas de rendu serveur, pas de template partagé.
 
 ```bash
-bun install
+bun install --frozen-lockfile   # une fois bun.lock committé
 bun run dev      # http://localhost:5173, /api et /graphql renvoyés vers Omega
 bun run build    # sortie statique dans .output/public
 bun run lint     # oxlint
@@ -28,7 +28,7 @@ authentification.
 | `app/components/ui` | 17 composants maison, aucune dépendance UI |
 | `useAsyncData` | cache et états de chargement, fournis par Nuxt |
 | `useI18n` maison | 50 lignes — anglais, français, espagnol |
-| lucide-vue-next | les icônes, arborescence secouée |
+| @lucide/vue | les icônes, arborescence secouée |
 
 Pages : accueil, documentation, connexion, tableau de bord, utilisateurs.
 
@@ -62,3 +62,47 @@ d'une ligne, `text-p-*` pour le texte qui passe à la ligne.
 curl -s http://127.0.0.1:3000/api/openapi.json > openapi.json
 bun x openapi-typescript openapi.json -o app/lib/api-types.ts
 ```
+
+## Authentification
+
+La session vit dans des cookies que le navigateur gère seul : aucun jeton
+n'est lisible depuis JavaScript (`app/lib/api.ts`, partagé avec React et Next).
+
+- `omega_access` et `omega_refresh` sont `HttpOnly` ; chaque appel part avec
+  `credentials: 'include'`.
+- `POST`, `PUT`, `PATCH`, `DELETE` renvoient le cookie lisible `omega_csrf`
+  dans `X-CSRF-Token` ; `GET /api/auth/csrf` le pose au démarrage.
+- un `401` déclenche un seul `POST /api/auth/refresh`, partagé par toutes les
+  requêtes en échec, puis la requête est rejouée une fois.
+- l'utilisateur connecté vient de `GET /api/auth/me` ; une déconnexion dans un
+  onglet déconnecte les autres (`BroadcastChannel('omega-auth')`).
+- `?next=` après connexion n'est suivi que s'il désigne un chemin de cette
+  origine.
+
+Seule `NUXT_PUBLIC_API_BASE` (base publique de l'API, vide = même origine) est
+lue depuis l'environnement : tout ce qui est sous `runtimeConfig.public` part
+chez chaque visiteur, n'y mettez jamais de secret.
+
+## En-têtes de sécurité
+
+- `server/plugins/csp.ts` calcule au `nuxt generate` l'empreinte sha256 des
+  scripts en ligne de la page (config d'exécution, importmap) et pose une CSP
+  qui n'autorise qu'eux : en `<meta>` dans le HTML statique, en en-tête quand
+  Nitro sert la page.
+- `routeRules` dans `nuxt.config.ts` ajoute `X-Content-Type-Options`,
+  `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options`, HSTS là où Nitro
+  sert l'application ou génère un fichier `_headers`.
+- Un hébergeur statique simple n'applique ni l'un ni l'autre : configurez ces
+  en-têtes sur le serveur, `frame-ancestors 'none'` compris (une `<meta>` ne
+  peut pas le porter). `security.ts` fait foi ; le README de l'interface React
+  en donne la version nginx et Caddy.
+
+Aucun composant ne rend de HTML brut (`v-html`) : la documentation est faite de
+blocs typés (`app/lib/docs.ts`) rendus en texte.
+
+## Installations
+
+`.npmrc` et `bunfig.toml` figent les versions exactes et refusent les scripts
+d'installation des dépendances. Committez le lockfile et installez depuis lui
+en CI (`bun install --frozen-lockfile` ou `npm ci`). Nuxt 4.6 demande Node
+22.22 ou plus récent.

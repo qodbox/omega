@@ -60,6 +60,7 @@ var stacks = []stack{
 			"locales/en.docs.json": filepath.Join("app", "locales", "en.docs.json"),
 			"locales/es.docs.json": filepath.Join("app", "locales", "es.docs.json"),
 			"api.ts":               filepath.Join("app", "lib", "api.ts"),
+			"security.ts":          "security.ts",
 			"tokens.css":           filepath.Join("app", "assets", "css", "tokens.css"),
 			"api-types.ts":         filepath.Join("app", "lib", "api-types.ts"),
 			"docs.ts":              filepath.Join("app", "lib", "docs.ts"),
@@ -71,7 +72,7 @@ var stacks = []stack{
 	},
 	{
 		name:  "next",
-		short: "Scaffold the Next.js 15 interface (App Router) — home, docs, auth, dashboard, users",
+		short: "Scaffold the Next.js 16 interface (App Router) — home, docs, auth, dashboard, users",
 		cli:   "shadcn@latest",
 		shared: map[string]string{
 			"locales/fr.docs.json":      filepath.Join("locales", "fr.docs.json"),
@@ -79,6 +80,7 @@ var stacks = []stack{
 			"locales/es.docs.json":      filepath.Join("locales", "es.docs.json"),
 			"reactlib/theme-toggle.tsx": filepath.Join("components", "theme-toggle.tsx"),
 			"api.ts":                    filepath.Join("lib", "api.ts"),
+			"security.ts":               "security.ts",
 			"reactlib/i18n.tsx":         filepath.Join("lib", "i18n.tsx"),
 			"reactlib/theme.tsx":        filepath.Join("lib", "theme.tsx"),
 			"reactlib/query.ts":         filepath.Join("lib", "query.ts"),
@@ -102,6 +104,7 @@ var stacks = []stack{
 			"locales/es.docs.json":      filepath.Join("src", "locales", "es.docs.json"),
 			"reactlib/theme-toggle.tsx": filepath.Join("src", "components", "theme-toggle.tsx"),
 			"api.ts":                    filepath.Join("src", "lib", "api.ts"),
+			"security.ts":               "security.ts",
 			"reactlib/i18n.tsx":         filepath.Join("src", "lib", "i18n.tsx"),
 			"reactlib/theme.tsx":        filepath.Join("src", "lib", "theme.tsx"),
 			"reactlib/query.ts":         filepath.Join("src", "lib", "query.ts"),
