@@ -45,6 +45,9 @@ func TestOpenAPIDescribesTheRoutesItServes(t *testing.T) {
 
 func TestConsolesAreServed(t *testing.T) {
 	s := boot(t)
+	// The metrics need an admin (or the scraper token); the consoles are
+	// public in testing.
+	s.signUpAdmin("consoles@integration.test")
 
 	for _, path := range []string{"/api/docs", "/graphql", "/api/metrics"} {
 		if answer := s.get(path); answer.status != http.StatusOK {

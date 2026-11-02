@@ -1,0 +1,14 @@
+# Operational endpoints: /api/metrics (Prometheus text) and /api/stats (JSON).
+#
+# ${VAR:-fallback} is expanded from the environment before the file is parsed,
+# so every value here can be overridden by .env or by real env vars.
+
+# A static token for the scraper: Prometheus sends it as
+# "Authorization: Bearer <token>" (bearer_token_file in its scrape config).
+# Generate it with openssl rand -hex 32.
+metrics_token: ${METRICS_TOKEN:-}
+
+# Whether a signed-in caller holding the metrics.view ability (admins hold
+# every ability) may read them. With this off and no token, the endpoints are
+# not served at all.
+metrics_admins: ${METRICS_ADMINS:-true}
