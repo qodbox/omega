@@ -1,14 +1,18 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/graphql-go/graphql"
-	"gorm.io/gorm"
 )
 
+// Schema builds the GraphQL schema of the registry. Every resolver goes through
+// the same checks as the REST handlers — begin, scope, fetch — so the two
+// transports answer the same question the same way: abilities, ownership,
+// hidden columns, write validation.
 func (r *Registry) Schema() (graphql.Schema, error) {
 	queries := graphql.Fields{}
 	mutations := graphql.Fields{}
@@ -20,65 +24,57 @@ func (r *Registry) Schema() (graphql.Schema, error) {
 			Fields: r.objectFields(resource),
 		})
 
-		queries[resource.Plural] = &graphql.Field{
-			Type: graphql.NewList(object),
-			Args: graphql.FieldConfigArgument{
-				"limit":  &graphql.ArgumentConfig{Type: graphql.Int, DefaultValue: defaultPerPage},
-				"offset": &graphql.ArgumentConfig{Type: graphql.Int, DefaultValue: 0},
-				"sort":   &graphql.ArgumentConfig{Type: graphql.String},
-			},
-			Resolve: func(p graphql.ResolveParams) (any, error) { return r.resolveList(resource, p) },
+		if resource.Allows(ActionList) {
+			queries[resource.Plural] = &graphql.Field{
+				Type: graphql.NewList(object),
+				Args: graphql.FieldConfigArgument{
+					"limit":  &graphql.ArgumentConfig{Type: graphql.Int, DefaultValue: defaultPerPage},
+					"offset": &graphql.ArgumentConfig{Type: graphql.Int, DefaultValue: 0},
+					"sort":   &graphql.ArgumentConfig{Type: graphql.String},
+				},
+				Resolve: func(p graphql.ResolveParams) (any, error) { return r.resolveList(resource, p) },
+			}
+			queries[resource.Plural+"_count"] = &graphql.Field{
+				Type:    graphql.Int,
+				Resolve: func(p graphql.ResolveParams) (any, error) { return r.resolveCount(resource, p) },
+			}
 		}
 
-		queries[resource.Singular] = &graphql.Field{
-			Type:    object,
-			Args:    graphql.FieldConfigArgument{"id": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)}},
-			Resolve: func(p graphql.ResolveParams) (any, error) { return r.resolveOne(resource, p) },
-		}
-
-		queries[resource.Plural+"_count"] = &graphql.Field{
-			Type: graphql.Int,
-			Resolve: func(p graphql.ResolveParams) (any, error) {
-				if err := r.permits(p.Context, resource, "list"); err != nil {
-					return nil, err
-				}
-				var total int64
-				err := r.scoped(resource).Count(&total).Error
-				return int(total), err
-			},
-		}
-
-		if !resource.writable() {
-			continue
+		if resource.Allows(ActionView) {
+			queries[resource.Singular] = &graphql.Field{
+				Type:    object,
+				Args:    graphql.FieldConfigArgument{"id": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)}},
+				Resolve: func(p graphql.ResolveParams) (any, error) { return r.resolveOne(resource, p) },
+			}
 		}
 
 		input := graphql.FieldConfigArgument{}
 		for _, field := range resource.Fields {
-			if field.ReadOnly || resource.Hidden[field.Name] {
+			if field.ReadOnly || resource.Hidden[field.Name] || field.Name == deletedAt {
 				continue
 			}
 			input[field.Name] = &graphql.ArgumentConfig{Type: scalarOf(field)}
 		}
 
-		mutations["create_"+resource.Singular] = &graphql.Field{
-			Type: object, Args: input,
-			Resolve: func(p graphql.ResolveParams) (any, error) { return r.resolveCreate(resource, p) },
+		if resource.Allows(ActionCreate) {
+			mutations["create_"+resource.Singular] = &graphql.Field{
+				Type: object, Args: input,
+				Resolve: func(p graphql.ResolveParams) (any, error) { return r.resolveCreate(resource, p) },
+			}
 		}
-		mutations["update_"+resource.Singular] = &graphql.Field{
-			Type:    object,
-			Args:    withID(input),
-			Resolve: func(p graphql.ResolveParams) (any, error) { return r.resolveUpdate(resource, p) },
+		if resource.Allows(ActionUpdate) {
+			mutations["update_"+resource.Singular] = &graphql.Field{
+				Type:    object,
+				Args:    withID(input),
+				Resolve: func(p graphql.ResolveParams) (any, error) { return r.resolveUpdate(resource, p) },
+			}
 		}
-		mutations["delete_"+resource.Singular] = &graphql.Field{
-			Type: graphql.Boolean,
-			Args: graphql.FieldConfigArgument{"id": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)}},
-			Resolve: func(p graphql.ResolveParams) (any, error) {
-				if err := r.permits(p.Context, resource, "delete"); err != nil {
-					return nil, err
-				}
-				result := r.deleteRow(resource, p.Args["id"])
-				return result.RowsAffected > 0, result.Error
-			},
+		if resource.Allows(ActionDelete) {
+			mutations["delete_"+resource.Singular] = &graphql.Field{
+				Type:    graphql.Boolean,
+				Args:    graphql.FieldConfigArgument{"id": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)}},
+				Resolve: func(p graphql.ResolveParams) (any, error) { return r.resolveDelete(resource, p) },
+			}
 		}
 	}
 
@@ -91,20 +87,158 @@ func (r *Registry) Schema() (graphql.Schema, error) {
 	return graphql.NewSchema(config)
 }
 
-func (r *Registry) scoped(resource *Resource) *gorm.DB {
-	query := r.db.Table(tableOf(r.db, resource))
-	if resource.softDeletes() {
-		query = query.Where(deletedAt + " IS NULL")
+// graphqlBegin is restBegin for the resolvers: the same checks, strict when no
+// gate is configured, and the error texts GraphQL clients already know.
+func (r *Registry) graphqlBegin(ctx context.Context, resource *Resource, action string) (*access, error) {
+	granted, err := r.begin(ctx, ctx, resource, action, true)
+	if errors.Is(err, errUnauthenticated) {
+		return nil, errors.New("graphql: authentication required")
 	}
-	return query
+	return granted, err
 }
 
-func (r *Registry) deleteRow(resource *Resource, id any) *gorm.DB {
-	query := r.scoped(resource).Where("id = ?", id)
-	if resource.softDeletes() {
-		return query.Updates(map[string]any{deletedAt: time.Now()})
+func (r *Registry) resolveList(resource *Resource, p graphql.ResolveParams) (any, error) {
+	granted, err := r.graphqlBegin(p.Context, resource, ActionList)
+	if err != nil {
+		return nil, err
 	}
-	return query.Delete(nil)
+
+	sort, _ := p.Args["sort"].(string)
+	query, err := sorted(r.scope(p.Context, resource, granted), resource, sort)
+	if err != nil {
+		return nil, err
+	}
+
+	limit, _ := p.Args["limit"].(int)
+	offset, _ := p.Args["offset"].(int)
+
+	rows := []map[string]any{}
+	if err := readable(query, resource).Limit(min(max(limit, 1), maxPerPage)).Offset(max(offset, 0)).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		resource.serialise(row)
+	}
+	return rows, nil
+}
+
+func (r *Registry) resolveCount(resource *Resource, p graphql.ResolveParams) (any, error) {
+	granted, err := r.graphqlBegin(p.Context, resource, ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var total int64
+	err = r.scope(p.Context, resource, granted).Count(&total).Error
+	return int(total), err
+}
+
+func (r *Registry) resolveOne(resource *Resource, p graphql.ResolveParams) (any, error) {
+	granted, err := r.graphqlBegin(p.Context, resource, ActionView)
+	if err != nil {
+		return nil, err
+	}
+
+	row, err := r.fetch(p.Context, resource, granted, ActionView, p.Args["id"])
+	if errors.Is(err, errNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return resource.serialise(row), nil
+}
+
+func (r *Registry) resolveCreate(resource *Resource, p graphql.ResolveParams) (any, error) {
+	granted, err := r.graphqlBegin(p.Context, resource, ActionCreate)
+	if err != nil {
+		return nil, err
+	}
+
+	raw := arguments(resource, p, false)
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("nothing to create")
+	}
+	payload, err := resource.payload(p.Context, granted, raw, false, r.exactDigits())
+	if err != nil {
+		return nil, err
+	}
+
+	if err := r.insert(p.Context, resource, payload); err != nil {
+		return nil, err
+	}
+
+	row, err := r.load(p.Context, resource, granted, insertedID(payload))
+	if err != nil {
+		return nil, err
+	}
+	return resource.serialise(row), nil
+}
+
+func (r *Registry) resolveUpdate(resource *Resource, p graphql.ResolveParams) (any, error) {
+	granted, err := r.graphqlBegin(p.Context, resource, ActionUpdate)
+	if err != nil {
+		return nil, err
+	}
+
+	payload, err := resource.payload(p.Context, granted, arguments(resource, p, true), true, r.exactDigits())
+	if err != nil {
+		return nil, err
+	}
+
+	id := p.Args["id"]
+	if _, err := r.fetch(p.Context, resource, granted, ActionUpdate, id); err != nil {
+		if errors.Is(err, errNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	affected, err := r.change(p.Context, resource, granted, id, payload)
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		return nil, nil
+	}
+
+	row, err := r.load(p.Context, resource, granted, id)
+	if err != nil {
+		return nil, err
+	}
+	return resource.serialise(row), nil
+}
+
+func (r *Registry) resolveDelete(resource *Resource, p graphql.ResolveParams) (any, error) {
+	granted, err := r.graphqlBegin(p.Context, resource, ActionDelete)
+	if err != nil {
+		return nil, err
+	}
+
+	id := p.Args["id"]
+	if _, err := r.fetch(p.Context, resource, granted, ActionDelete, id); err != nil {
+		if errors.Is(err, errNotFound) {
+			return false, nil
+		}
+		return nil, err
+	}
+
+	affected, err := r.remove(p.Context, resource, granted, id)
+	return affected > 0, err
+}
+
+// arguments collects the arguments that name a field; payload decides which
+// of them may be written.
+func arguments(resource *Resource, p graphql.ResolveParams, skipID bool) map[string]any {
+	raw := map[string]any{}
+	for _, field := range resource.Fields {
+		if skipID && field.Name == "id" {
+			continue
+		}
+		if value, ok := p.Args[field.Name]; ok {
+			raw[field.Name] = value
+		}
+	}
+	return raw
 }
 
 func upperFirst(name string) string {
@@ -136,6 +270,9 @@ func (r *Registry) objectFields(resource *Resource) graphql.Fields {
 }
 
 func scalarOf(field Field) graphql.Output {
+	if field.Decimal {
+		return graphql.String
+	}
 	switch field.Type {
 	case "integer":
 		return graphql.Int
@@ -165,121 +302,4 @@ func withID(args graphql.FieldConfigArgument) graphql.FieldConfigArgument {
 		out[name] = arg
 	}
 	return out
-}
-
-func (r *Registry) resolveList(resource *Resource, p graphql.ResolveParams) (any, error) {
-	if err := r.permits(p.Context, resource, "list"); err != nil {
-		return nil, err
-	}
-
-	query := r.scoped(resource)
-
-	if sort, ok := p.Args["sort"].(string); ok && sort != "" {
-		column := strings.TrimPrefix(sort, "-")
-		if !resource.has(column) {
-			return nil, fmt.Errorf("unknown sort column %s", column)
-		}
-		if strings.HasPrefix(sort, "-") {
-			column += " desc"
-		}
-		query = query.Order(column)
-	}
-
-	limit, _ := p.Args["limit"].(int)
-	offset, _ := p.Args["offset"].(int)
-
-	rows := []map[string]any{}
-	if err := query.Limit(min(max(limit, 1), maxPerPage)).Offset(max(offset, 0)).Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	for _, row := range rows {
-		resource.serialise(row)
-	}
-	return rows, nil
-}
-
-func (r *Registry) resolveOne(resource *Resource, p graphql.ResolveParams) (any, error) {
-	if err := r.permits(p.Context, resource, "view"); err != nil {
-		return nil, err
-	}
-
-	row := map[string]any{}
-	if err := r.scoped(resource).Where("id = ?", p.Args["id"]).Take(&row).Error; err != nil {
-		return nil, nil
-	}
-	return resource.serialise(row), nil
-}
-
-func (r *Registry) resolveCreate(resource *Resource, p graphql.ResolveParams) (any, error) {
-	if err := r.permits(p.Context, resource, "create"); err != nil {
-		return nil, err
-	}
-
-	payload := arguments(resource, p, false)
-	if len(payload) == 0 {
-		return nil, fmt.Errorf("nothing to create")
-	}
-
-	now := time.Now()
-	for _, column := range []string{createdAt, updatedAt} {
-		if resource.hasColumn(column) {
-			payload[column] = now
-		}
-	}
-
-	if err := r.db.Table(tableOf(r.db, resource)).Create(payload).Error; err != nil {
-		return nil, err
-	}
-
-	row := map[string]any{}
-	if err := r.scoped(resource).Where("id = ?", insertedID(payload)).Take(&row).Error; err != nil {
-		return nil, err
-	}
-	return resource.serialise(row), nil
-}
-
-func (r *Registry) resolveUpdate(resource *Resource, p graphql.ResolveParams) (any, error) {
-	if err := r.permits(p.Context, resource, "update"); err != nil {
-		return nil, err
-	}
-
-	payload := arguments(resource, p, true)
-	if resource.hasColumn(updatedAt) {
-		payload[updatedAt] = time.Now()
-	}
-
-	result := r.scoped(resource).Where("id = ?", p.Args["id"]).Updates(payload)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected == 0 {
-		return nil, nil
-	}
-	return r.readBack(resource, p.Args["id"])
-}
-
-// readBack serves the row an actor has just written. It carries no ability check
-// of its own: whoever passed the create or update check may see the result.
-func (r *Registry) readBack(resource *Resource, id any) (any, error) {
-	row := map[string]any{}
-	if err := r.scoped(resource).Where("id = ?", id).Take(&row).Error; err != nil {
-		return nil, err
-	}
-	return resource.serialise(row), nil
-}
-
-func arguments(resource *Resource, p graphql.ResolveParams, skipID bool) map[string]any {
-	payload := map[string]any{}
-	for _, field := range resource.Fields {
-		if field.ReadOnly || resource.Hidden[field.Name] {
-			continue
-		}
-		if skipID && field.Name == "id" {
-			continue
-		}
-		if value, ok := p.Args[field.Name]; ok {
-			payload[field.Column] = value
-		}
-	}
-	return payload
 }

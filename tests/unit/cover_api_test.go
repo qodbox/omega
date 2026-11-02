@@ -181,7 +181,9 @@ func TestApiCovAuthorizeMapsEveryRestAction(t *testing.T) {
 		}
 	}
 
-	registry, _ := apiCovRegistry(t)
+	// Sans gate, le middleware pose toutes les questions lui-meme.
+	registry := api.NewRegistry(apiCovDB(t))
+	api.Register[apiCovCarnet](registry, "carnets", "carnet", "secret")
 	app := fiber.New()
 	registry.Mount(app.Group("/api"), api.Authorize(ability))
 
@@ -201,6 +203,23 @@ func TestApiCovAuthorizeMapsEveryRestAction(t *testing.T) {
 		apiCovCall(t, app, tc.method, tc.path, "")
 		if demanded != tc.want {
 			t.Errorf("%s %s demande %q, want %q", tc.method, tc.path, demanded, tc.want)
+		}
+	}
+
+	// With a gate, the row actions are asked by the handler, with the row as
+	// subject: the middleware only answers list and create.
+	gated, _ := apiCovRegistry(t)
+	gatedApp := fiber.New()
+	gated.Mount(gatedApp.Group("/api"), api.Authorize(ability))
+	for _, tc := range cases {
+		demanded = ""
+		apiCovCall(t, gatedApp, tc.method, tc.path, "")
+		want := tc.want
+		if strings.HasSuffix(want, ".view") || strings.HasSuffix(want, ".update") || strings.HasSuffix(want, ".delete") {
+			want = ""
+		}
+		if demanded != want {
+			t.Errorf("gated %s %s demande %q, want %q", tc.method, tc.path, demanded, want)
 		}
 	}
 }

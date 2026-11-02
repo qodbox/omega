@@ -233,7 +233,7 @@ func TestDiscoveryMapsEveryColumnType(t *testing.T) {
 	}
 
 	expected := map[string]string{
-		"actif": "boolean", "quantite": "integer", "prix": "number", "ratio": "number",
+		"actif": "boolean", "quantite": "integer", "prix": "string", "ratio": "number",
 		"cree_le": "string", "jour": "string", "heure": "string",
 		"donnees": "object", "binaire": "string", "identifiant": "string", "libelle": "string",
 	}
@@ -245,7 +245,7 @@ func TestDiscoveryMapsEveryColumnType(t *testing.T) {
 
 	expectedFormats := map[string]string{
 		"cree_le": "date-time", "jour": "date", "heure": "time",
-		"binaire": "byte", "identifiant": "uuid",
+		"binaire": "byte", "identifiant": "uuid", "prix": "decimal",
 	}
 	for name, want := range expectedFormats {
 		if got := formats[name]; got != want {

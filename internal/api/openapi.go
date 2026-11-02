@@ -8,8 +8,30 @@ func (r *Registry) OpenAPI(title, version, server string) Spec {
 		schemas[resource.Singular] = r.schema(resource, false)
 		schemas[resource.Singular+"Input"] = r.schema(resource, true)
 
-		paths["/"+resource.Plural] = r.collectionPath(resource)
-		paths["/"+resource.Plural+"/{id}"] = r.itemPath(resource)
+		collection := r.collectionPath(resource)
+		if !resource.Allows(ActionList) {
+			collection.Get = nil
+		}
+		if !resource.Allows(ActionCreate) {
+			collection.Post = nil
+		}
+		if collection.Get != nil || collection.Post != nil {
+			paths["/"+resource.Plural] = collection
+		}
+
+		item := r.itemPath(resource)
+		if !resource.Allows(ActionView) {
+			item.Get = nil
+		}
+		if !resource.Allows(ActionUpdate) {
+			item.Patch = nil
+		}
+		if !resource.Allows(ActionDelete) {
+			item.Delete = nil
+		}
+		if item.Get != nil || item.Patch != nil || item.Delete != nil {
+			paths["/"+resource.Plural+"/{id}"] = item
+		}
 	}
 
 	r.mu.RLock()
@@ -76,8 +98,10 @@ func (r *Registry) collectionPath(resource *Resource) PathItem {
 		Get: &Operation{
 			Tags:    []string{resource.Plural},
 			Summary: "List " + resource.Plural,
-			Description: "Filter on any column: `?name=Ada`. Operators are suffixes — " +
-				"`__like`, `__gt`, `__gte`, `__lt`, `__lte`, `__ne`, `__in` (comma separated).",
+			Description: "Filter on any visible column: `?name=Ada`. Operators are suffixes — " +
+				"`__contains`, `__starts`, `__ends` (literal text), `__like` (% and _ are wildcards, " +
+				"\\ escapes them), `__gt`, `__gte`, `__lt`, `__lte`, `__ne`, `__in` (comma separated, " +
+				"at most 100 values). At most 10 filters per request. `?count=false` skips the total.",
 			OperationID: resource.Plural + ".index",
 			Parameters:  r.listParameters(resource),
 			Responses: map[string]Response{
@@ -158,6 +182,7 @@ func (r *Registry) listParameters(resource *Resource) []Parameter {
 		QueryParameter("page", "Page number, from 1", Integer()),
 		QueryParameter("per_page", "Rows per page, up to 200", Integer()),
 		QueryParameter("sort", "Column to sort on, - for descending", String()),
+		QueryParameter("count", "false omits meta.total and meta.last_page (no COUNT query)", &Schema{Type: "boolean"}),
 	}
 
 	for _, field := range resource.Fields {
