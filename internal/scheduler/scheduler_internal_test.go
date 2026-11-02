@@ -65,7 +65,7 @@ func TestLaunchContainsAPanicAndRecordsTheError(t *testing.T) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		for _, item := range s.entries {
-			if item.running {
+			if item.running > 0 {
 				return false
 			}
 		}
@@ -74,10 +74,10 @@ func TestLaunchContainsAPanicAndRecordsTheError(t *testing.T) {
 }
 
 func TestProtectTurnsAPanicIntoAnError(t *testing.T) {
-	if err := protect(func() error { panic("boum") }); err == nil {
+	if err := protect(func() error { panic("boum") }, silent); err == nil {
 		t.Fatal("la panique n'a pas ete convertie en erreur")
 	}
-	if err := protect(func() error { return nil }); err != nil {
+	if err := protect(func() error { return nil }, silent); err != nil {
 		t.Fatalf("un succes est devenu une erreur: %v", err)
 	}
 }

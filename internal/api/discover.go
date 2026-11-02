@@ -70,7 +70,7 @@ func (r *Registry) Discover(db *gorm.DB) error {
 func internalTable(table string) bool {
 	switch table {
 	case "migrations", "schema_migrations", "refresh_tokens",
-		"jobs", "failed_jobs", "sessions", "cache", "password_resets",
+		"jobs", "failed_jobs", "schedule_locks", "sessions", "cache", "password_resets",
 		"sqlite_sequence", "goose_db_version",
 		// Billing state is written by Stripe's webhooks and by nothing else.
 		// Published as resources these would let any authenticated caller POST

@@ -3,6 +3,7 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"omega"
@@ -16,16 +17,23 @@ func RegisterWorkers(app *omega.App) error {
 	if app.Queue != nil {
 		app.Queue.Handle("welcome_email", jobs.WelcomeEmail(app.Mail, app.Log))
 		app.Queue.Handle("purge_tokens", jobs.PurgeTokens(app.DB, app.Log))
+		if app.Metrics != nil {
+			app.Metrics.Collect(app.Queue.WriteMetrics)
+		}
 	}
 
 	app.Events.Listen("user.registered", "log", listeners.LogRegistration(app.Log))
 	app.Events.ListenAsync("user.registered", "welcome", func(ctx context.Context, payload any) error {
-		return app.Queue.Push(ctx, "welcome_email", payload)
+		return app.Queue.Push(ctx, "welcome_email", payload, queue.Options{
+			UniqueKey: welcomeKey(payload),
+		})
 	})
 
 	app.Scheduler.
 		Every("purge-expired-tokens", time.Hour, func(ctx context.Context) error {
-			return app.Queue.Push(ctx, "purge_tokens", map[string]any{})
+			// One purge in the queue is enough, however late the workers are.
+			return app.Queue.Push(ctx, "purge_tokens", map[string]any{},
+				queue.Options{UniqueKey: "purge_tokens"})
 		}).
 		Every("purge-login-attempts", time.Hour, func(ctx context.Context) error {
 			window := app.Cfg.Duration("app.ratelimit.account.window")
@@ -79,4 +87,16 @@ func decode[T any](payload []byte) (T, error) {
 	return into, err
 }
 
-var _ = queue.Options{}
+// welcomeKey dedupes the welcome email per address: an event delivered twice
+// enqueues one email.
+func welcomeKey(payload any) string {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	target, err := decode[jobs.Welcome](encoded)
+	if err != nil || target.Email == "" {
+		return ""
+	}
+	return "welcome_email:" + strings.ToLower(target.Email)
+}
