@@ -170,8 +170,15 @@ jobs:
 
       - name: The image boots and answers
         run: |
+          # In production serve refuses to start while migrations are pending,
+          # so migrate first, on the volume serve will use, as compose does.
+          docker volume create omega-db
+          docker run --rm -v omega-db:/database \
+            -e AUTH_SECRET="$AUTH_SECRET" \
+            omega:ci migrate
           docker run -d --name omega \
             -p 3000:3000 \
+            -v omega-db:/database \
             -e AUTH_SECRET="$AUTH_SECRET" \
             omega:ci serve
           for attempt in $(seq 1 20); do
