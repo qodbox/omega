@@ -180,7 +180,9 @@ func TestRateKeyFallsBackToTheAddress(t *testing.T) {
 	}
 }
 
-func TestRateKeySeparatesTwoTokens(t *testing.T) {
+// A bearer token is not verified when the limiter runs: keying on it would let
+// a client mint a fresh bucket per request by sending random tokens.
+func TestRateKeyIgnoresUnverifiedTokens(t *testing.T) {
 	app := fiber.New()
 
 	var seen string
@@ -202,11 +204,11 @@ func TestRateKeySeparatesTwoTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.HasPrefix(one, "token:") {
-		t.Errorf("avec jeton, rateKey = %q, attendu un prefixe token:", one)
+	if !strings.HasPrefix(one, "ip:") {
+		t.Errorf("avec jeton, rateKey = %q, attendu un prefixe ip:", one)
 	}
-	if one == seen {
-		t.Error("deux jetons differents doivent donner deux cles differentes")
+	if one != seen {
+		t.Error("deux jetons inventes ne doivent pas ouvrir deux compteurs")
 	}
 }
 

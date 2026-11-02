@@ -18,7 +18,6 @@ import (
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 
-	"omega/internal/auth"
 	"omega/internal/broadcast"
 	"omega/internal/cache"
 	"omega/internal/currency"
@@ -134,7 +133,9 @@ func Boot(opts ...Option) (*App, error) {
 	}
 
 	if cfg.withHTTP {
-		app.bootHTTP(conf)
+		if err := app.bootHTTP(conf); err != nil {
+			return nil, err
+		}
 	}
 
 	app.fillContainer()
@@ -197,8 +198,19 @@ func (a *App) bootServices(conf *Config) error {
 	return nil
 }
 
-func (a *App) bootHTTP(conf *Config) {
-	trusted := conf.StringSlice("app.trusted_proxies")
+func (a *App) bootHTTP(conf *Config) error {
+	origins := splitList(conf.StringOr("app.cors.origins", "http://localhost:5173"))
+	credentials := conf.BoolOr("app.cors.credentials", true)
+	if err := checkCORS(origins, credentials); err != nil {
+		return err
+	}
+
+	trusted := trustedProxies(conf)
+	if conf.StringOr("app.proxy_header", "") != "" && len(trusted) == 0 {
+		a.Log.Warn().Msg("kernel: app.proxy_header is set but app.trusted_proxies is empty — " +
+			"the header is ignored and every client is keyed on the proxy's address")
+	}
+
 	a.Fiber = fiber.New(fiber.Config{
 		AppName:      conf.StringOr("app.name", "Omega"),
 		ErrorHandler: ErrorHandler(a.Log, conf.Debug(), conf.IsLocal()),
@@ -210,20 +222,26 @@ func (a *App) bootHTTP(conf *Config) {
 		// honoured once APP_TRUSTED_PROXIES names the proxies in front of us.
 		TrustProxy:       len(trusted) > 0,
 		TrustProxyConfig: fiber.TrustProxyConfig{Proxies: trusted},
+		// A forged X-Forwarded-For entry that is not an address is skipped
+		// rather than used as a rate-limit key.
+		EnableIPValidation: true,
 	})
 
 	a.Fiber.Use(recover.New())
+	a.Fiber.Use(securityHeaders(conf))
 	a.Fiber.Use(cors.New(cors.Config{
-		AllowOrigins:     splitList(conf.StringOr("app.cors.origins", "http://localhost:5173")),
-		AllowCredentials: conf.BoolOr("app.cors.credentials", true),
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Omega-Live", "X-Omega-Navigate"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		ExposeHeaders:    []string{"Content-Length"},
-		MaxAge:           600,
+		AllowOrigins:     origins,
+		AllowCredentials: credentials,
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization",
+			"X-Omega-Live", "X-Omega-Navigate", "X-CSRF-Token", "X-Omega-Auth"},
+		AllowMethods:  []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		ExposeHeaders: []string{"Content-Length"},
+		MaxAge:        600,
 	}))
 	a.Fiber.Use(RequestID())
 	a.Fiber.Use(RequestLogger(a.Log, conf.IsLocal()))
 	a.Fiber.Use(a.Metrics.Middleware())
+	a.Fiber.Use(noStore())
 
 	if conf.IntOr("app.ratelimit.max", 0) > 0 {
 		a.Fiber.Use(limiter.New(limiter.Config{
@@ -237,6 +255,7 @@ func (a *App) bootHTTP(conf *Config) {
 	}
 
 	a.Router = router.New(a.Fiber)
+	return nil
 }
 
 func (a *App) CredentialLimiter() fiber.Handler {
@@ -253,6 +272,8 @@ func (a *App) CredentialLimiter() fiber.Handler {
 	return limiter.New(limiter.Config{
 		Max:        max,
 		Expiration: window,
+		// c.IP() reads app.proxy_header only from a proxy listed in
+		// app.trusted_proxies; otherwise it is the peer address.
 		KeyGenerator: func(c fiber.Ctx) string {
 			return "credentials:" + c.Route().Path + ":" + c.IP()
 		},
@@ -273,10 +294,10 @@ func splitList(raw string) []string {
 	return out
 }
 
+// rateKey is the client address alone. It used to be the bearer token when
+// one was sent, but the token is not verified at this point: anyone could mint
+// a fresh bucket per request by sending random tokens.
 func rateKey(c fiber.Ctx) string {
-	if token := auth.Fingerprint(c); token != "" {
-		return "token:" + token
-	}
 	return "ip:" + c.IP()
 }
 

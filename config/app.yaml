@@ -22,13 +22,20 @@ shutdown_timeout: 10s
 # Maximum request body size, in bytes (4 MiB).
 body_limit: 4194304
 
+# The origins allowed to call the API from a browser, comma-separated. With
+# credentials on (the cookie transport needs them), a "*" is refused at boot.
+# The same list is checked on the WebSocket upgrade.
 cors:
-  origins: ${CORS_ORIGINS:-http://localhost:5173}
+  # Quoted, so that a "*" reaches the boot check instead of breaking the YAML.
+  origins: "${CORS_ORIGINS:-http://localhost:5173}"
   credentials: ${CORS_CREDENTIALS:-true}
 
 # Behind a proxy, c.IP() returns the proxy unless proxy_header is set — and a
 # per-IP limiter would then throttle every user together. The header is only
-# trusted on requests from an address listed in trusted_proxies.
+# trusted on requests from an address listed in trusted_proxies (comma-
+# separated addresses or CIDRs); without that list it is ignored. Prefer a
+# header the proxy overwrites (X-Real-IP) over one it appends to
+# (X-Forwarded-For), whose first entry the client controls.
 proxy_header: ${APP_PROXY_HEADER:-}
 trusted_proxies: ${APP_TRUSTED_PROXIES:-}
 
@@ -37,11 +44,22 @@ ratelimit:
   max: ${RATELIMIT_MAX:-0}
   window: ${RATELIMIT_WINDOW:-1m}
 
-  # The brute-force barrier on login, register, refresh and password. Keyed on
+  # The brute-force barrier on login, register and password. Keyed on
   # the client address alone, so a valid token buys no extra attempts.
   credentials:
     max: ${RATELIMIT_AUTH_MAX:-10}
     window: ${RATELIMIT_AUTH_WINDOW:-1m}
+
+  # Account creation, per client address.
+  register:
+    max: ${RATELIMIT_REGISTER_MAX:-10}
+    window: ${RATELIMIT_REGISTER_WINDOW:-10m}
+
+  # Token refresh, per client address. Higher than credentials: every open
+  # tab refreshes on its own.
+  refresh:
+    max: ${RATELIMIT_REFRESH_MAX:-30}
+    window: ${RATELIMIT_REFRESH_WINDOW:-1m}
 
   # Failed logins counted per account, in the database — so the limit holds
   # across replicas and restarts, and a distributed attack cannot spread it
