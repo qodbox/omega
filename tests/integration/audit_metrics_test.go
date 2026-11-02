@@ -8,6 +8,7 @@ import (
 
 func TestUnknownPathsDoNotCreateMetricBuckets(t *testing.T) {
 	s := boot(t)
+	s.signUpAdmin("metrics@integration.test")
 
 	before := metricRouteCount(t, s)
 

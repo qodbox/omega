@@ -1,0 +1,16 @@
+# The generated API: its consoles and its schema.
+#
+# ${VAR:-fallback} is expanded from the environment before the file is parsed,
+# so every value here can be overridden by .env or by real env vars.
+
+docs:
+  # /api/docs (Swagger UI), /api/docs/assets, /api/openapi.json and GET
+  # /graphql (GraphiQL). Empty means public in local and testing only.
+  # When not public they answer 404, except to a signed-in caller holding the
+  # docs.view ability (admins hold every ability).
+  public: ${API_DOCS_PUBLIC:-}
+
+# Whether an anonymous caller may run a GraphQL introspection query. Empty
+# means yes in local and testing only; elsewhere introspection needs a token
+# like any other query.
+public_introspection: ${API_PUBLIC_INTROSPECTION:-}

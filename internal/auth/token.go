@@ -23,6 +23,15 @@ var method = jwt.SigningMethodHS256
 type Claims struct {
 	Kind string `json:"typ"`
 	Role string `json:"role,omitempty"`
+
+	// Version is the account's token version when the token was signed. Bumping
+	// users.token_version (sign out everywhere, password change) makes every
+	// access token signed before it unusable at once, instead of at expiry.
+	Version uint64 `json:"tv,omitempty"`
+
+	// Family ties a refresh token to the login it descends from. Replaying a
+	// refresh token that was already rotated revokes the whole family.
+	Family string `json:"fam,omitempty"`
 	jwt.RegisteredClaims
 }
 

@@ -29,7 +29,11 @@ backoff: 250ms
 
 # How far a webhook's timestamp may drift from our clock before it is refused.
 # It bounds the replay window, so keep it short.
+# Booting with more than 15m is refused.
 tolerance: 5m
+
+# The largest webhook body accepted, in bytes. A Stripe event is a few KB.
+webhook_max_bytes: 262144
 
 # Where Stripe sends the caller back once the hosted pages are done.
 success_url: ${BILLING_SUCCESS_URL:-http://localhost:5173/billing/done}

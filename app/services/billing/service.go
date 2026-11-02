@@ -49,6 +49,7 @@ type Settings struct {
 	MaxAttempts     int           `mapstructure:"max_attempts"`
 	Backoff         time.Duration `mapstructure:"backoff"`
 	Tolerance       time.Duration `mapstructure:"tolerance"`
+	WebhookMaxBytes int           `mapstructure:"webhook_max_bytes"`
 	SuccessURL      string        `mapstructure:"success_url"`
 	CancelURL       string        `mapstructure:"cancel_url"`
 	PortalReturnURL string        `mapstructure:"portal_return_url"`

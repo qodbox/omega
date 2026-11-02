@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/markbates/goth"
@@ -34,6 +35,9 @@ type Service struct {
 }
 
 func NewService(db *gorm.DB, guard *jwt.Guard, bus *events.Bus) *Service {
+	// Hashed ahead of the first unknown-email sign-in, which would otherwise
+	// take twice as long as the ones after it.
+	go burnHash()
 	return &Service{db: db, guard: guard, events: bus}
 }
 
@@ -104,29 +108,61 @@ func (a *Service) Login(ctx context.Context, body request.Login, address string)
 	}
 
 	_ = a.attempts.Clear(ctx, email)
+	a.upgradeHash(ctx, &user, body.Password)
 	return a.session(&user)
 }
 
-func (a *Service) Refresh(ctx context.Context, refreshToken string) (jwt.Tokens, error) {
+// upgradeHash re-hashes a password stored at a lower bcrypt cost, now that
+// the plain text is at hand. A failure is not the caller's problem: the old
+// hash still verifies.
+func (a *Service) upgradeHash(ctx context.Context, user *models.User, plain string) {
+	if !user.NeedsRehash() || user.SetPassword(plain) != nil {
+		return
+	}
+	_ = a.db.WithContext(ctx).Model(user).Update("password", user.Password).Error
+}
+
+// Refresh spends a refresh token for a new pair. A token replayed after its
+// rotation revokes its whole family (the guard logs it) and is refused.
+func (a *Service) Refresh(ctx context.Context, refreshToken string) (*Session, error) {
 	subject, err := a.guard.Subject(refreshToken)
 	if err != nil {
-		return jwt.Tokens{}, ErrInvalidRefresh
+		return nil, ErrInvalidRefresh
 	}
 
 	var user models.User
 	if err := a.db.WithContext(ctx).Where("id = ?", subject).Take(&user).Error; err != nil {
-		return jwt.Tokens{}, ErrInvalidRefresh
+		return nil, ErrInvalidRefresh
 	}
 
-	tokens, err := a.guard.Rotate(refreshToken, user.Role)
+	tokens, err := a.guard.RotateGrant(refreshToken, user.Role, user.TokenVersion)
 	if err != nil {
-		return jwt.Tokens{}, ErrInvalidRefresh
+		return nil, ErrInvalidRefresh
 	}
-	return tokens, nil
+	return &Session{User: &user, Tokens: tokens}, nil
 }
 
 func (a *Service) Logout(refreshToken string) {
 	_ = a.guard.Revoke(refreshToken)
+}
+
+// LogoutAll signs the account out everywhere: every refresh token is revoked
+// and the token version bumped, so the access tokens in flight stop working
+// on their next request.
+func (a *Service) LogoutAll(ctx context.Context, user *models.User) error {
+	if err := a.bumpVersion(ctx, user); err != nil {
+		return err
+	}
+	return a.guard.RevokeAll(user.Key())
+}
+
+func (a *Service) bumpVersion(ctx context.Context, user *models.User) error {
+	if err := a.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", user.ID).
+		Update("token_version", gorm.Expr("token_version + 1")).Error; err != nil {
+		return err
+	}
+	return a.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", user.ID).
+		Select("token_version").Scan(&user.TokenVersion).Error
 }
 
 func (a *Service) ChangePassword(ctx context.Context, user *models.User, body request.ChangePassword) (jwt.Tokens, error) {
@@ -137,14 +173,14 @@ func (a *Service) ChangePassword(ctx context.Context, user *models.User, body re
 	if err := user.SetPassword(body.NewPassword); err != nil {
 		return jwt.Tokens{}, err
 	}
-	if err := a.db.WithContext(ctx).Save(user).Error; err != nil {
+	if err := a.db.WithContext(ctx).Model(user).Update("password", user.Password).Error; err != nil {
 		return jwt.Tokens{}, err
 	}
-	if err := a.guard.RevokeAll(user.Key()); err != nil {
+	if err := a.LogoutAll(ctx, user); err != nil {
 		return jwt.Tokens{}, err
 	}
 
-	return a.guard.Issue(user.Key(), user.Role)
+	return a.guard.IssueGrant(jwt.Grant{Subject: user.Key(), Role: user.Role, Version: user.TokenVersion})
 }
 
 func (a *Service) SignInWithProvider(ctx context.Context, external goth.User) (*Session, error) {
@@ -191,7 +227,7 @@ func (a *Service) SignInWithProvider(ctx context.Context, external goth.User) (*
 }
 
 func (a *Service) session(user *models.User) (*Session, error) {
-	tokens, err := a.guard.Issue(user.Key(), user.Role)
+	tokens, err := a.guard.IssueGrant(jwt.Grant{Subject: user.Key(), Role: user.Role, Version: user.TokenVersion})
 	if err != nil {
 		return nil, err
 	}
@@ -224,10 +260,32 @@ func displayName(external goth.User, email string) string {
 	return local
 }
 
-var burnHash = []byte("$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy")
+// burnHashes holds, per bcrypt cost, a hash of a random secret. Comparing an
+// unknown account's password against the one at models.PasswordCost spends
+// the time a real check spends, so the response time does not tell whether
+// the email is registered.
+var burnHashes sync.Map
+
+func burnHash() []byte {
+	cost := models.PasswordCost
+	if hash, ok := burnHashes.Load(cost); ok {
+		return hash.([]byte)
+	}
+
+	secret, err := unguessable()
+	if err != nil {
+		secret = "omega-burn-hash"
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(secret), cost)
+	if err != nil {
+		return nil
+	}
+	actual, _ := burnHashes.LoadOrStore(cost, hash)
+	return actual.([]byte)
+}
 
 func burnPasswordCheck(plain string) {
-	_ = bcrypt.CompareHashAndPassword(burnHash, []byte(plain))
+	_ = bcrypt.CompareHashAndPassword(burnHash(), []byte(plain))
 }
 
 func unguessable() (string, error) {

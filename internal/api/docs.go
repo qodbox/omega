@@ -1,7 +1,10 @@
 package api
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/base64"
+	"regexp"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -50,25 +53,54 @@ func (d Docs) Asset() fiber.Handler {
 }
 
 func (d Docs) SwaggerUI() fiber.Handler {
-	return func(c fiber.Ctx) error {
-		c.Type("html", "utf-8")
-		return c.SendString(strings.NewReplacer(
-			"{{title}}", d.Title,
-			"{{assets}}", d.AssetPrefix,
-			"{{spec}}", d.OpenAPIPath,
-		).Replace(swaggerPage))
-	}
+	return page(strings.NewReplacer(
+		"{{title}}", d.Title,
+		"{{assets}}", d.AssetPrefix,
+		"{{spec}}", d.OpenAPIPath,
+	).Replace(swaggerPage))
 }
 
 func (d Docs) GraphiQL() fiber.Handler {
+	return page(strings.NewReplacer(
+		"{{title}}", d.Title,
+		"{{assets}}", d.AssetPrefix,
+		"{{endpoint}}", d.GraphQLPath,
+	).Replace(graphiqlPage))
+}
+
+// page serves a console with a policy that lets it run, and nothing else:
+// scripts from this origin plus the page's own inline script (pinned by its
+// hash), requests to this origin only, no framing.
+func page(html string) fiber.Handler {
+	policy := PageCSP(html)
 	return func(c fiber.Ctx) error {
+		c.Set(fiber.HeaderContentSecurityPolicy, policy)
 		c.Type("html", "utf-8")
-		return c.SendString(strings.NewReplacer(
-			"{{title}}", d.Title,
-			"{{assets}}", d.AssetPrefix,
-			"{{endpoint}}", d.GraphQLPath,
-		).Replace(graphiqlPage))
+		return c.SendString(html)
 	}
+}
+
+var inlineScript = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
+
+// PageCSP is the Content-Security-Policy of a console page.
+func PageCSP(html string) string {
+	scripts := []string{"'self'"}
+	for _, match := range inlineScript.FindAllStringSubmatch(html, -1) {
+		sum := sha256.Sum256([]byte(match[1]))
+		scripts = append(scripts, "'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'")
+	}
+
+	return strings.Join([]string{
+		"default-src 'none'",
+		"script-src " + strings.Join(scripts, " "),
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data: blob:",
+		"font-src 'self' data:",
+		"connect-src 'self'",
+		"frame-ancestors 'none'",
+		"base-uri 'none'",
+		"form-action 'self'",
+	}, "; ")
 }
 
 const swaggerPage = `<!doctype html>
@@ -85,7 +117,18 @@ const swaggerPage = `<!doctype html>
 <script src="{{assets}}/swagger-ui-bundle.js"></script>
 <script src="{{assets}}/swagger-ui-standalone-preset.js"></script>
 <script>
+  // Signed in with the session cookies, a state-changing call needs the CSRF
+  // token echoed in a header; a bearer token set through Authorize does not.
+  function csrfToken() {
+    var match = document.cookie.match(/(?:^|; )omega_csrf=([^;]*)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  }
   window.ui = SwaggerUIBundle({
+    requestInterceptor: function (request) {
+      var token = csrfToken();
+      if (token) { request.headers['X-CSRF-Token'] = token; }
+      return request;
+    },
     url: '{{spec}}',
     dom_id: '#swagger',
     deepLinking: true,
@@ -168,11 +211,14 @@ const graphiqlPage = `<!doctype html>
   var api = window.GraphiQL;
   var Console = (api && api.GraphiQL) || api;
   var endpoint = '{{endpoint}}';
+  var csrf = (document.cookie.match(/(?:^|; )omega_csrf=([^;]*)/) || [])[1];
+  var session = csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {};
 
   var fetcher = api && api.createFetcher
-    ? api.createFetcher({ url: endpoint })
+    ? api.createFetcher({ url: endpoint, headers: session })
     : function (params, opts) {
         var headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+        for (var name in session) { headers[name] = session[name]; }
         var extra = (opts && opts.headers) || {};
         for (var key in extra) { headers[key] = extra[key]; }
         return fetch(endpoint, {

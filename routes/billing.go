@@ -36,6 +36,11 @@ func registerBilling(app *omega.App, group fiber.Router, guard *jwt.Guard, regis
 			"without it a forged webhook is indistinguishable from a real one (set STRIPE_WEBHOOK_SECRET)")
 	}
 
+	if settings.Tolerance > billing.MaxTolerance {
+		return fmt.Errorf("routes: billing.tolerance is %s — above %s it no longer bounds webhook replays",
+			settings.Tolerance, billing.MaxTolerance)
+	}
+
 	client := billing.New(billing.Config{
 		SecretKey:   settings.SecretKey,
 		APIVersion:  settings.APIVersion,

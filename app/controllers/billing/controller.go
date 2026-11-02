@@ -126,6 +126,10 @@ func (b *Controller) Resume(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"data": presenter.NewSubscription(subscription)})
 }
 
+// DefaultWebhookMaxBytes bounds a webhook body when billing.webhook_max_bytes
+// is not set.
+const DefaultWebhookMaxBytes = 256 * 1024
+
 // Webhook takes what Stripe sends.
 //
 // It is the only public route here, so it authenticates the request itself,
@@ -133,6 +137,16 @@ func (b *Controller) Resume(c fiber.Ctx) error {
 // before that check passes.
 func (b *Controller) Webhook(c fiber.Ctx) error {
 	settings := b.billing.Settings()
+
+	// A Stripe event is a few kilobytes. Anything far larger is not one, and
+	// is refused before the signature is even computed over it.
+	limit := settings.WebhookMaxBytes
+	if limit <= 0 {
+		limit = DefaultWebhookMaxBytes
+	}
+	if len(c.Body()) > limit {
+		return fiber.NewError(fiber.StatusRequestEntityTooLarge, "Payload too large.")
+	}
 
 	event, err := billing.VerifyWebhook(
 		c.Body(),

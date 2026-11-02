@@ -40,6 +40,7 @@ func TestDocsAssetsRefuseTraversalAndUnknownFiles(t *testing.T) {
 
 func TestConsolesAndSpecAreReachable(t *testing.T) {
 	s := boot(t)
+	s.signUpAdmin("reachable@integration.test")
 
 	for _, path := range []string{"/api/docs", "/api/openapi.json", "/graphql", "/api/health", "/api/metrics", "/api/stats"} {
 		if answer := s.get(path); answer.status != http.StatusOK {

@@ -17,6 +17,10 @@ import (
 // be replayed, while leaving room for ordinary clock skew.
 const DefaultTolerance = 5 * time.Minute
 
+// MaxTolerance is the widest replay window the application accepts to boot
+// with.
+const MaxTolerance = 15 * time.Minute
+
 var (
 	ErrNoSignature      = errors.New("billing: the request carries no Stripe-Signature header")
 	ErrSignatureFormat  = errors.New("billing: malformed Stripe-Signature header")

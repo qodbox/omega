@@ -53,7 +53,7 @@ already wired to your API.
 
 ```bash
 cp .env.example .env
-# Required: without a secret, the server refuses to boot.
+# Required: without a secret of at least 32 bytes, the server refuses to boot.
 echo "AUTH_SECRET=$(openssl rand -base64 48)" >> .env
 
 go run ./cmd/omega migrate:fresh --seed
@@ -70,6 +70,10 @@ The application listens on `http://localhost:3000` (`--port` to change it).
 
 There is **no Node dependency**: both consoles are embedded in the binary by
 `go:embed`, never loaded from a CDN.
+
+The consoles and the OpenAPI document are public in `local` and `testing` only.
+Elsewhere they answer 404, except to a signed-in caller holding the `docs.view`
+ability (admins hold every ability); `API_DOCS_PUBLIC=true` opens them again.
 
 ### Development
 
@@ -113,23 +117,80 @@ providers by [goth](https://github.com/markbates/goth).
 
 ```
 POST /api/auth/register    create an account
-POST /api/auth/login       get a token pair
+POST /api/auth/login       sign in
 POST /api/auth/refresh     rotate the pair
-POST /api/auth/logout      revoke the refresh token
+POST /api/auth/logout      revoke this sign-in
+POST /api/auth/logout-all  sign out on every device
 POST /api/auth/password    change the password
-GET  /api/auth/me          the token's bearer
+GET  /api/auth/csrf        (re)set the CSRF cookie
+GET  /api/auth/me          the signed-in user
 GET  /api/auth/providers   the active providers
 GET  /api/auth/{provider}          start an OAuth sign-in
 GET  /api/auth/{provider}/callback finish it
 ```
 
-The access token is short-lived and stateless. The refresh token is
-**single-use**: it is recorded in `refresh_tokens`, removed as soon as it is
-exchanged, and replaying a spent token is refused — which is what makes a theft
-loud. Changing a password revokes every session.
+### Two transports: cookies for browsers, bearer for API clients
 
-Everything under `/api` requires an `Authorization: Bearer <access_token>`,
-except `/auth/*`, `/health`, `/docs` and `/openapi.json`.
+**Cookie mode** (the default, `AUTH_COOKIES=true`): no token is ever readable by
+JavaScript. Login, register, refresh and the OAuth callback set three cookies and
+answer `{"token_type":"Cookie","expires_in":900,"user":{...}}`, without tokens:
+
+| Cookie | Holds | Attributes |
+|---|---|---|
+| `omega_access` | the access JWT | HttpOnly · Secure · SameSite=Lax · Path=/ · Max-Age = access TTL |
+| `omega_refresh` | the refresh JWT | HttpOnly · Secure · SameSite=Strict · Path=/api/auth · Max-Age = refresh TTL |
+| `omega_csrf` | 32 random bytes, base64url | readable by JS · Secure · SameSite=Lax · Path=/ |
+
+A request with no `Authorization` header authenticates with `omega_access`. On
+`POST`, `PUT`, `PATCH` and `DELETE` it must also send `X-CSRF-Token` equal to the
+`omega_csrf` cookie (compared in constant time), or it is refused with 403
+`{"error":"CSRF token missing or invalid."}` — refresh and logout included, which
+read the refresh token from `omega_refresh` and take no body. A browser client
+calls `GET /api/auth/csrf` once at boot (204, keeps a valid cookie or sets one),
+fetches with `credentials: 'include'`, and reads its signed-in state from
+`/api/auth/me`. The SSE stream (`/api/events`) and the WebSocket (`/api/ws`)
+authenticate with the same cookie; the WebSocket upgrade is refused from an
+origin outside `CORS_ORIGINS` (cross-site WebSocket hijacking).
+
+**Bearer mode** is unchanged for mobile apps, server-to-server calls and tests:
+send `X-Omega-Auth: bearer` on login/register (or turn cookies off) and the body
+carries `access_token`, `refresh_token`, `token_type: "Bearer"`, `expires_in`;
+then send `Authorization: Bearer <access_token>`. A bearer request is never
+asked for a CSRF token, and `/refresh` and `/logout` still accept
+`{"refresh_token": "..."}` in the body.
+
+> **API on another origin.** With the frontend on `app.example.com` and the API
+> on `api.example.com`, set `AUTH_COOKIE_DOMAIN=example.com` (the parent domain),
+> otherwise the frontend cannot read `omega_csrf`. List the frontend in
+> `CORS_ORIGINS`; credentials are allowed for those origins only, and a `*` is
+> refused at boot while `CORS_CREDENTIALS=true`.
+
+### Sessions and revocation
+
+- The **refresh token is single-use** and belongs to a *family*: every token
+  rotated from the same sign-in. A spent token is kept (marked used) until it
+  expires; presenting it again means it was copied, so the **whole family is
+  revoked** and a `refresh_token_reuse` security warning is logged.
+  `AUTH_REUSE_GRACE` (default `0s`, strict) tolerates two tabs racing on the
+  same cookie: inside it a replay is refused but revokes nothing.
+- Every access token carries the account's **token version** (`tv`), checked
+  against `users.token_version` on each authenticated request — the user is
+  loaded there anyway. `logout-all` and a password change bump it, so every
+  access token already handed out stops working on its next request, not at
+  expiry. The role is read from the loaded user too, so a demotion applies at
+  once. Logout of a single sign-in retires its refresh family; its access token
+  lives out its TTL (15 minutes by default).
+- **Passwords**: 12 characters at least, 72 bytes at most (bcrypt's limit,
+  refused rather than silently truncated), not a common one. New hashes use
+  bcrypt cost 12; an older, cheaper hash still verifies and is upgraded on the
+  next successful sign-in. An unknown email is checked against a dummy hash of
+  the same cost, and gets the same `Invalid credentials.` as a wrong password.
+- **The secret** must be at least 32 bytes (measured decoded when written in
+  standard base64, as `openssl rand -base64 48` produces); a shorter one refuses
+  to boot outside `APP_ENV=testing`.
+
+Everything under `/api` requires authentication, except `/auth/*`, `/health`,
+`/currencies` and, in local and testing, `/docs` and `/openapi.json`.
 
 ### OAuth providers
 
@@ -459,7 +520,9 @@ What the webhook endpoint guarantees:
 
 - **The signature is checked on the raw body**, before anything is parsed, with a
   constant-time compare and a five-minute tolerance that bounds the replay
-  window. Several `v1` signatures are accepted, so a secret can be rotated
+  window (booting with more than 15 minutes is refused). A body over
+  `billing.webhook_max_bytes` (256 KiB) is refused with 413 before any
+  signature is computed. Several `v1` signatures are accepted, so a secret can be rotated
   without dropping an event.
 - **An event is applied exactly once.** Stripe delivers at least once and retries
   for days; the event id is the primary key of a ledger table, and the insert
@@ -498,10 +561,27 @@ indistinguishable from a forged one.
 ## Realtime and observability
 
 ```
-GET /api/events?channels=orders   SSE stream, token required
-GET /api/metrics                  Prometheus format
-GET /api/stats                    the same as JSON
+GET /api/events?channels=orders   SSE stream, token or cookie required
+GET /api/ws                       WebSocket, token or cookie, Origin checked
+GET /api/metrics                  Prometheus format, protected
+GET /api/stats                    the same as JSON, protected
+GET /api/health                   public; the version only in local and testing
 ```
+
+The metrics are not public. Prometheus sends the static token from
+`METRICS_TOKEN` (`observability.metrics_token`, compared in constant time):
+
+```yaml
+scrape_configs:
+  - job_name: omega
+    metrics_path: /api/metrics
+    authorization:
+      credentials_file: /etc/prometheus/omega-token
+```
+
+A signed-in caller holding the `metrics.view` ability (admins hold every
+ability) reads them too, unless `METRICS_ADMINS=false`. With no token and admins
+off, both endpoints are not served at all.
 
 ```go
 omega.Broadcast().Publish("orders", "created", order)
@@ -513,23 +593,47 @@ Three independent layers:
 
 | Scope | Default | Variables |
 |---|---|---|
-| Every route | **off** | `RATELIMIT_MAX` · `RATELIMIT_WINDOW` |
+| Every route, per address | **off** | `RATELIMIT_MAX` · `RATELIMIT_WINDOW` |
 | Credentials, per address | **10 / min**, on | `RATELIMIT_AUTH_MAX` · `RATELIMIT_AUTH_WINDOW` |
+| Account creation, per address | **10 / 10 min**, on | `RATELIMIT_REGISTER_MAX` · `RATELIMIT_REGISTER_WINDOW` |
+| Token refresh, per address | **30 / min**, on | `RATELIMIT_REFRESH_MAX` · `RATELIMIT_REFRESH_WINDOW` |
 | Failed sign-ins, per account | **8 / 15 min**, on | `RATELIMIT_ACCOUNT_MAX` · `RATELIMIT_ACCOUNT_WINDOW` |
 
-The per-address limit covers `login`, `register`, `refresh` and `password`. It
-is keyed on the address alone, so a valid token buys no extra attempts on a
-password change.
+The credentials limit covers `login`, `register` and `password`. Every limit is
+keyed on the client address alone: an unverified bearer token is never a key,
+or anyone could open a fresh bucket per request with random tokens.
 
 The per-account limit is counted **in the database**, in `login_attempts`: it
 therefore holds across replicas and restarts, and a distributed attack from
 thousands of addresses does not get around it. The counter drops back to zero on
 the first successful sign-in; an hourly task purges expired attempts.
 
-Behind a reverse proxy, set `APP_PROXY_HEADER` and `APP_TRUSTED_PROXIES` —
-otherwise every request shares the proxy's address and the per-address limit
-becomes useless. The header is read only on requests coming from an address in
-`APP_TRUSTED_PROXIES`, so setting `APP_PROXY_HEADER` alone has no effect.
+Behind a reverse proxy, set `APP_PROXY_HEADER` and `APP_TRUSTED_PROXIES` (comma-
+separated addresses or CIDRs) — otherwise every request shares the proxy's
+address and the per-address limit becomes useless. The header is read only on
+requests coming from an address in `APP_TRUSTED_PROXIES`, so setting
+`APP_PROXY_HEADER` alone has no effect (a warning says so at boot). Prefer a
+header the proxy overwrites (`X-Real-IP`) to one it appends to
+(`X-Forwarded-For`), whose first entry the client writes.
+
+### Security headers
+
+Every answer carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+`Referrer-Policy: strict-origin-when-cross-origin`,
+`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy:
+same-site` and a `Permissions-Policy` that turns off camera, microphone,
+geolocation, payment and the like (Fiber's helmet middleware). Outside local
+development it also carries `Strict-Transport-Security: max-age=63072000;
+includeSubDomains`.
+
+The API (`/api/*`, `/graphql`) answers with `Content-Security-Policy:
+default-src 'none'; frame-ancestors 'none'`. The two consoles set their own
+policy: scripts and styles from the binary itself, their inline script pinned by
+its hash, requests to the same origin only, no `eval`. Paths outside the API
+(a single-page application served from the binary) set their own CSP.
+
+Everything under `/api/auth` and every answer to an authenticated request is
+sent with `Cache-Control: no-store`.
 
 ## Choosing your frontend
 
@@ -653,6 +757,26 @@ omega.Cfg().String("auth.secret")
 Environment variables win, and `.env` is loaded automatically. For SQLite,
 `DB_SQLITE_PATH` is a file path; `DB_DATABASE` remains the database name for
 PostgreSQL and MySQL.
+
+The security settings, and their defaults:
+
+| Key | Variable | Default |
+|---|---|---|
+| `auth.secret` | `AUTH_SECRET` | none; 32 bytes at least outside testing |
+| `auth.reuse_grace` | `AUTH_REUSE_GRACE` | `0s` (strict) |
+| `auth.cookies.enabled` | `AUTH_COOKIES` | `true` |
+| `auth.cookies.domain` | `AUTH_COOKIE_DOMAIN` | empty (host-only) |
+| `auth.cookies.secure` | `AUTH_COOKIE_SECURE` | on outside local and testing |
+| `auth.cookies.same_site` | `AUTH_COOKIE_SAMESITE` | `Lax` (refresh cookie always `Strict`) |
+| `app.cors.origins` | `CORS_ORIGINS` | `http://localhost:5173`; `*` refused with credentials |
+| `app.cors.credentials` | `CORS_CREDENTIALS` | `true` |
+| `app.ratelimit.register.*` | `RATELIMIT_REGISTER_MAX` · `_WINDOW` | `10` / `10m` |
+| `app.ratelimit.refresh.*` | `RATELIMIT_REFRESH_MAX` · `_WINDOW` | `30` / `1m` |
+| `api.docs.public` | `API_DOCS_PUBLIC` | on in local and testing, off elsewhere |
+| `api.public_introspection` | `API_PUBLIC_INTROSPECTION` | on in local and testing, off elsewhere |
+| `observability.metrics_token` | `METRICS_TOKEN` | empty |
+| `observability.metrics_admins` | `METRICS_ADMINS` | `true` |
+| `billing.webhook_max_bytes` | — | `262144` |
 
 ## Extensibility
 
