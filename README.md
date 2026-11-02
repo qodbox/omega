@@ -857,7 +857,7 @@ API client.
 ```bash
 omega web:nuxt                    # Nuxt 4 (SPA) + shadcn-vue
 omega web:react                   # React 19 (Vite) + shadcn/ui
-omega web:next                    # Next.js 15 (App Router) + shadcn/ui
+omega web:next                    # Next.js 16 (App Router) + shadcn/ui
 omega web:nuxt --force --install  # replace and install everything
 ```
 
@@ -892,8 +892,13 @@ and all three frontends follow.
 ### Signing in is identical everywhere
 
 `api.ts` is written once and knows no framework. All three frontends therefore
-authenticate in exactly the same way: tokens in `localStorage`, `Bearer` header,
-refresh rotation on the fly on a 401, sign-out propagated to the other tabs.
+authenticate in exactly the same way, and no token is ever readable by
+JavaScript: the API sets `HttpOnly` cookies, every request goes out with
+`credentials: 'include'`, unsafe methods carry an `X-CSRF-Token` header read
+from the `omega_csrf` cookie, a 401 triggers one shared refresh and a single
+retry, the signed-in state comes from `GET /api/auth/me`, and sign-out reaches
+the other tabs through a `BroadcastChannel` that carries no token. Nothing is
+kept in `localStorage` or `sessionStorage`; a test enforces it.
 
 Each stack supplies only the reactivity: a `ref` on the Nuxt side, a context on
 the React and Next sides, both wired to the same `subscribe()`. A test refuses
