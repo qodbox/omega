@@ -56,6 +56,10 @@ func serveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := ensureMigrated(app); err != nil {
+				_ = app.Shutdown()
+				return err
+			}
 
 			if behind, stale := staleBinary(); stale && app.Cfg.IsLocal() {
 				app.Log.Warn().

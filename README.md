@@ -435,10 +435,10 @@ omega test [--coverage]       Tests
 omega routes                  List the named routes
 omega mcp                     Serve the Model Context Protocol
 
-omega migrate                 Apply the pending migrations
-omega migrate:rollback [--step N]
-omega migrate:reset · migrate:fresh [--seed] · migrate:status
-omega db:seed [Seeder...]
+omega migrate [--pretend]     Apply the pending migrations (--pretend lists them)
+omega migrate:rollback [--step N] [--force]
+omega migrate:reset [--force] · migrate:fresh [--seed] [--force] · migrate:status
+omega db:seed [Seeder...] [--force]
 
 omega make:model Post         model + create migration
 omega make:service Post · make:request Post · make:controller Post
@@ -538,20 +538,104 @@ self-contained.
 ```go
 omega.Dispatch(ctx, "welcome_email", map[string]any{"email": user.Email})
 omega.Dispatch(ctx, "report", payload, omega.Job{Delay: time.Hour, MaxTries: 5})
+
+// At most one pending or running refresh per corridor, however many API
+// replicas or scheduler ticks ask for it.
+omega.Dispatch(ctx, "refresh_quotes", corridor, omega.Job{
+    UniqueKey: "quotes:" + corridor.ID,
+    Timeout:   20 * time.Second,
+})
 ```
 
-A failing job is pushed back with exponential backoff capped at 10 minutes; past
-`MaxTries` it goes to `failed` and waits for `queue:retry`. A worker killed
-mid-flight loses nothing: its jobs are reclaimed after `stuck_after`.
+What the worker guarantees, on PostgreSQL, MySQL 8 and SQLite:
+
+- **One worker per job.** A job is claimed with `FOR UPDATE SKIP LOCKED` on
+  PostgreSQL and MySQL (a single atomic `UPDATE ... RETURNING` on SQLite), and
+  only after a concurrency slot is free, so it never waits once claimed.
+- **Heartbeat and fencing.** A running job refreshes `claimed_at` every
+  `heartbeat`. Only a job whose heartbeat is older than `stuck_after` is taken
+  back (its worker died), and that run counts as an attempt: a job that kills
+  its worker every time ends in `failed`, it does not loop. Every status write
+  is scoped to the claim (the attempt number), so a worker that lost its claim
+  cannot complete or retry a job someone else now runs: its handler is
+  cancelled and its outcome dropped.
+- **Timeouts.** Each attempt gets a deadline: `omega.Job{Timeout}` or
+  `queue.timeout`, which must stay below `stuck_after`.
+- **Graceful shutdown.** On SIGTERM the worker stops claiming and lets running
+  jobs finish for `shutdown_timeout`. Past it their context is cancelled and
+  they go back to pending with the attempt refunded. Statuses are written with
+  a context the shutdown does not cancel, and a transient write error is
+  retried.
+- **Retries.** A failing job comes back after 2^attempt seconds, capped at ten
+  minutes, minus up to 20% of random jitter; past `MaxTries` it goes to
+  `failed` and waits for `queue:retry`.
+- **Idempotent dispatch.** With `UniqueKey`, a second dispatch while a job with
+  that key is pending or running is a no-op (`Queue.Enqueue` reports it). A
+  unique index arbitrates, so concurrent dispatches write one row. The key is
+  free again once the job completes or fails.
+
+Delivery is still *at least once*: a worker can die after the side effect and
+before recording it. Write handlers so that running them twice is harmless (an
+upsert keyed on the provider's reference, a status check before acting).
+
+**Payloads are stored in clear** in the `jobs` table. Never put a secret in one
+(a token, an API key, a wallet seed): pass an identifier and load the rest in
+the handler. `last_error` is cut at 2 KB and any copy of the payload in the
+error message is replaced by `[payload]`.
+
+`config/queue.yaml`:
+
+| Key | Default | |
+|---|---|---|
+| `stuck_after` | `5m` | a running job whose heartbeat is older is taken back |
+| `heartbeat` | `30s` | how often a running job refreshes its claim |
+| `timeout` | `2m` | default bound of one attempt, below `stuck_after` |
+| `shutdown_timeout` | `30s` | drain time on SIGTERM; keep the container's stop grace period above it |
+| `metrics_addr` | empty | serve the worker's `/metrics` on this address, e.g. `:9090` |
+
+The API's `/api/metrics` includes the queue depth per status
+(`omega_queue_jobs{status=...}`) and the counters of its own process; a worker
+started with `metrics_addr` exposes its `processed`, `failed`, `retried`,
+`interrupted`, `reclaimed`, `lost` and `store_errors` counters.
 
 ```go
 app.Events.Listen("user.registered", "log", listeners.LogRegistration(app.Log))
 app.Events.ListenAsync("user.registered", "welcome", enqueueWelcome)
 
 app.Scheduler.
+    Every("refresh-quotes", 5*time.Second, refreshQuotes).WithTimeout(4*time.Second).
     Every("purge-tokens", time.Hour, purgeTokens).
     DailyAt("report", "03:00", nightlyReport)
 ```
+
+`Every` fires on multiples of its interval (every hour on the hour), so every
+`schedule:run` replica computes the same slots. Before running a slot, a
+replica takes it in the `schedule_locks` table: with two or more schedulers,
+each slot runs once. A task gets a timeout (its interval by default, one hour
+for a daily task, or `WithTimeout`), a panic is recovered and logged, and a
+slot is skipped while the previous run of the same task is still going, unless
+the task is declared with `AllowOverlap()`. If the lock cannot be taken (the
+database is down), the slot is skipped rather than risk a double run. On
+SIGTERM the scheduler waits `scheduler.shutdown_timeout` (30s) for running
+tasks.
+
+## Migrations in production
+
+- `migrate` takes a lock first (a PostgreSQL advisory lock, a MySQL `GET_LOCK`,
+  a lock file next to a SQLite database). Two replicas migrating at deploy run
+  one after the other; the second finds nothing to do. It waits up to ten
+  minutes for the lock.
+- All pending migrations run in one transaction. On PostgreSQL and SQLite,
+  whose DDL is transactional, a failure leaves the schema untouched. MySQL
+  commits after every `CREATE`, `ALTER` or `DROP`: a migration failing halfway
+  leaves its first statements applied, so write MySQL migrations to be re-run
+  (check `HasTable` / `HasColumn` first).
+- `migrate:fresh`, `migrate:reset`, `migrate:rollback` and `db:seed` refuse to
+  run when `APP_ENV=production` unless given `--force` (no short form).
+- `migrate --pretend` lists what would run; `migrate:status` shows everything.
+- `serve` refuses to start while migrations are pending when
+  `database.require_migrated` is true (`DB_REQUIRE_MIGRATED`; empty means true
+  in production), and logs a warning otherwise.
 
 ## Cache, storage, mail
 

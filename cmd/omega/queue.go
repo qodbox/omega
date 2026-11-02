@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -11,7 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"omega"
 	"omega/internal/queue"
+	"omega/internal/scheduler"
 )
 
 func queueCommands() []*cobra.Command {
@@ -45,7 +49,7 @@ func queueWorkCommand() *cobra.Command {
 				names[index] = strings.TrimSpace(names[index])
 			}
 
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
 			app.Log.Info().
@@ -54,13 +58,31 @@ func queueWorkCommand() *cobra.Command {
 				Int("handlers", len(app.Queue.Names())).
 				Msg("queue: worker started")
 
-			return app.Queue.Work(ctx, queue.WorkerOptions{
-				Queues:      names,
-				Concurrency: concurrency,
-				Poll:        poll,
-				StuckAfter:  app.Cfg.Duration("queue.stuck_after"),
-				Log:         app.Log,
+			if addr := app.Cfg.StringOr("queue.metrics_addr", ""); addr != "" {
+				stopMetrics := serveMetrics(addr, app)
+				defer stopMetrics()
+			}
+
+			err = app.Queue.Work(ctx, queue.WorkerOptions{
+				Queues:          names,
+				Concurrency:     concurrency,
+				Poll:            poll,
+				StuckAfter:      app.Cfg.Duration("queue.stuck_after"),
+				Heartbeat:       app.Cfg.Duration("queue.heartbeat"),
+				Timeout:         app.Cfg.Duration("queue.timeout"),
+				ShutdownTimeout: app.Cfg.Duration("queue.shutdown_timeout"),
+				Log:             app.Log,
 			})
+
+			stats := app.Queue.Stats()
+			app.Log.Info().
+				Int64("processed", stats.Processed).
+				Int64("failed", stats.Failed).
+				Int64("retried", stats.Retried).
+				Int64("interrupted", stats.Interrupted).
+				Int64("store_errors", stats.StoreErrors).
+				Msg("queue: worker stopped")
+			return err
 		},
 	}
 
@@ -174,10 +196,18 @@ func scheduleCommands() []*cobra.Command {
 			}
 			defer app.Shutdown()
 
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			app.Log.Info().Int("tasks", len(app.Scheduler.Tasks())).Msg("scheduler: started")
+			locker := scheduler.NewDBLocker(app.DB)
+			app.Scheduler.
+				UseLocker(locker).
+				ShutdownTimeout(app.Cfg.Duration("scheduler.shutdown_timeout"))
+
+			app.Log.Info().
+				Int("tasks", len(app.Scheduler.Tasks())).
+				Str("replica", locker.Owner()).
+				Msg("scheduler: started")
 			return app.Scheduler.Run(ctx)
 		},
 	}
@@ -205,4 +235,28 @@ func scheduleCommands() []*cobra.Command {
 	}
 
 	return []*cobra.Command{run, list}
+}
+
+// serveMetrics exposes the worker's metrics: the API's /api/metrics only sees
+// the counters of the API process.
+func serveMetrics(addr string, app *omega.App) func() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		_, _ = w.Write([]byte(app.Metrics.Render()))
+	})
+	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			app.Log.Error().Err(err).Str("addr", addr).Msg("queue: metrics server stopped")
+		}
+	}()
+	app.Log.Info().Str("addr", addr).Msg("queue: serving metrics")
+
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+	}
 }

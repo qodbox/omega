@@ -30,8 +30,14 @@ type aqsCovQueueStore struct {
 	done      []uint
 }
 
-func (s *aqsCovQueueStore) Push(context.Context, string, string, string, time.Time, int) error {
-	return nil
+func (s *aqsCovQueueStore) Push(context.Context, queue.NewJob) (bool, error) {
+	return true, nil
+}
+
+func (s *aqsCovQueueStore) Heartbeat(context.Context, *queue.Entry, time.Time) error { return nil }
+
+func (s *aqsCovQueueStore) Counts(context.Context) (map[string]int64, error) {
+	return map[string]int64{"pending": int64(len(s.pending))}, nil
 }
 
 func (s *aqsCovQueueStore) Claim(_ context.Context, _ []string, _ time.Time) (*queue.Entry, error) {
@@ -51,24 +57,24 @@ func (s *aqsCovQueueStore) Claim(_ context.Context, _ []string, _ time.Time) (*q
 	return entry, nil
 }
 
-func (s *aqsCovQueueStore) Release(_ context.Context, _ uint, runAt time.Time, _ string) error {
+func (s *aqsCovQueueStore) Release(_ context.Context, _ *queue.Entry, runAt time.Time, _ string, _ bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.released = append(s.released, runAt)
 	return nil
 }
 
-func (s *aqsCovQueueStore) Fail(_ context.Context, _ uint, failure string) error {
+func (s *aqsCovQueueStore) Fail(_ context.Context, _ *queue.Entry, failure string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failed = append(s.failed, failure)
 	return nil
 }
 
-func (s *aqsCovQueueStore) Complete(_ context.Context, id uint) error {
+func (s *aqsCovQueueStore) Complete(_ context.Context, entry *queue.Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.done = append(s.done, id)
+	s.done = append(s.done, entry.ID)
 	return nil
 }
 
@@ -77,11 +83,11 @@ func (s *aqsCovQueueStore) Retry(context.Context, uint) (int64, error)         {
 func (s *aqsCovQueueStore) Purge(context.Context, string) (int64, error)       { return 0, nil }
 func (s *aqsCovQueueStore) Pending(context.Context) (int64, error)             { return 0, nil }
 
-func (s *aqsCovQueueStore) Reclaim(context.Context, time.Time) (int64, error) {
+func (s *aqsCovQueueStore) Reclaim(context.Context, time.Time) (int64, int64, error) {
 	if s.onReclaim != nil {
 		s.onReclaim()
 	}
-	return s.reclaim, nil
+	return s.reclaim, 0, nil
 }
 
 func (s *aqsCovQueueStore) Sweep(context.Context, string, time.Time) (int64, error) { return 0, nil }
@@ -208,8 +214,8 @@ func TestAqsCovWorkCapsTheRetryBackoffAtTenMinutes(t *testing.T) {
 		t.Fatalf("reprogrammations = %d, want 1", len(released))
 	}
 	wait := time.Until(released[0])
-	if wait < 9*time.Minute || wait > 10*time.Minute {
-		t.Fatalf("attente = %v, want environ 10 minutes", wait)
+	if wait < 7*time.Minute || wait > 10*time.Minute {
+		t.Fatalf("attente = %v, want entre 8 et 10 minutes (plafond moins la gigue)", wait)
 	}
 }
 
@@ -262,7 +268,7 @@ func TestAqsCovClaimSurfacesAnUpdateFailure(t *testing.T) {
 	store := queue.NewStore(db)
 	ctx := context.Background()
 
-	if err := store.Push(ctx, "aqs.cover", "default", "{}", time.Now().Add(-time.Minute), 3); err != nil {
+	if _, err := store.Push(ctx, queue.NewJob{Name: "aqs.cover", Queue: "default", Payload: "{}", RunAt: time.Now().Add(-time.Minute), MaxTries: 3}); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	if err := db.Exec(`CREATE TRIGGER aqs_cov_bloque BEFORE UPDATE ON jobs BEGIN SELECT RAISE(ABORT, 'aqs'); END;`).Error; err != nil {

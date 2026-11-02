@@ -43,6 +43,9 @@ services:
   worker:
     <<: *omega
     command: ["queue:work", "--concurrency", "4"]
+    # Above queue.shutdown_timeout (30s): running jobs finish, or are put back,
+    # before Docker sends SIGKILL.
+    stop_grace_period: 45s
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,6 +55,8 @@ services:
   scheduler:
     <<: *omega
     command: ["schedule:run"]
+    # Replicas are safe: each task slot runs once (schedule_locks).
+    stop_grace_period: 45s
     depends_on:
       postgres:
         condition: service_healthy

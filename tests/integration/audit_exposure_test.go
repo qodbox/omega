@@ -10,7 +10,7 @@ func TestInternalTablesAreNotExposedAsResources(t *testing.T) {
 	s := boot(t)
 	s.signUpAdmin("probe@integration.test")
 
-	for _, table := range []string{"jobs", "refresh_tokens", "migrations"} {
+	for _, table := range []string{"jobs", "schedule_locks", "refresh_tokens", "migrations"} {
 		answer := s.get("/api/" + table)
 		if answer.status != http.StatusNotFound {
 			t.Errorf("/api/%s est expose: status = %d, want 404 — %s", table, answer.status, truncate(answer.raw))

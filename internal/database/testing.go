@@ -27,3 +27,12 @@ func NewTestDB() (*Manager, error) {
 	}
 	return manager, nil
 }
+
+// PostgresTestEnv names the variable holding a PostgreSQL DSN for the tests
+// that need the real engine (row locks, SKIP LOCKED, advisory locks). Without
+// it those tests skip.
+const PostgresTestEnv = "OMEGA_TEST_POSTGRES_DSN"
+
+// MySQLTestEnv names the variable holding a MySQL DSN (user:pass@tcp(host)/)
+// for the tests of the MySQL paths. Without it those tests skip.
+const MySQLTestEnv = "OMEGA_TEST_MYSQL_DSN"

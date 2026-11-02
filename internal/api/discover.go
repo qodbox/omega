@@ -238,7 +238,7 @@ func parseSize(declared string) (int, int) {
 func internalTable(table string) bool {
 	switch table {
 	case "migrations", "schema_migrations", "refresh_tokens",
-		"jobs", "failed_jobs", "sessions", "cache", "password_resets",
+		"jobs", "failed_jobs", "schedule_locks", "sessions", "cache", "password_resets",
 		"sqlite_sequence", "goose_db_version",
 		// Written by the authentication layer alone: identifiers and client
 		// addresses of failed logins.

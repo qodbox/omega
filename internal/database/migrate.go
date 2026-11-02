@@ -39,46 +39,93 @@ func Migrations() []*gormigrate.Migration {
 	return ordered
 }
 
+// Migrator runs every registered migration in a single transaction
+// (UseTransaction): on PostgreSQL and SQLite, whose DDL is transactional, a
+// failing migration leaves the schema and the migrations table as they were.
+// MySQL commits implicitly after each CREATE, ALTER or DROP: there a failure
+// halfway leaves the statements before it applied, and the migration must be
+// written to be re-run (check HasTable/HasColumn first).
 func Migrator(db *gorm.DB) *gormigrate.Gormigrate {
+	return migratorFor(db, Migrations())
+}
+
+func migratorFor(db *gorm.DB, list []*gormigrate.Migration) *gormigrate.Gormigrate {
 	options := *gormigrate.DefaultOptions
 	options.TableName = migrationTable
 	options.UseTransaction = true
 
-	return gormigrate.New(db, &options, Migrations())
+	return gormigrate.New(db, &options, list)
 }
 
+// Up applies the pending migrations under the migration lock.
 func Up(db *gorm.DB) error {
+	_, err := Migrate(db)
+	return err
+}
+
+// Migrate applies the pending migrations under the migration lock and
+// reports how many it applied: a replica that waited for another one to
+// finish applies none.
+func Migrate(db *gorm.DB) (int, error) {
 	if len(Migrations()) == 0 {
-		return nil
+		return 0, nil
 	}
-	return Migrator(db).Migrate()
-}
 
-func RollbackLast(db *gorm.DB) error {
-	return Migrator(db).RollbackLast()
-}
-
-func Reset(db *gorm.DB) error {
-	migrator := Migrator(db)
-	for {
-		applied, err := Applied(db)
+	applied := 0
+	err := WithMigrationLock(db, func() error {
+		pending, err := Pending(db)
 		if err != nil {
 			return err
 		}
-		if len(applied) == 0 {
+		if pending == 0 {
 			return nil
 		}
-		if err := migrator.RollbackLast(); err != nil {
+		if err := Migrator(db).Migrate(); err != nil {
 			return err
 		}
-	}
+		applied = pending
+		return nil
+	})
+	return applied, err
 }
 
+// RollbackLast undoes the last applied migration under the migration lock.
+func RollbackLast(db *gorm.DB) error {
+	return WithMigrationLock(db, func() error {
+		return Migrator(db).RollbackLast()
+	})
+}
+
+// Reset undoes every applied migration under the migration lock.
+func Reset(db *gorm.DB) error {
+	return WithMigrationLock(db, func() error {
+		migrator := Migrator(db)
+		for {
+			applied, err := Applied(db)
+			if err != nil {
+				return err
+			}
+			if len(applied) == 0 {
+				return nil
+			}
+			if err := migrator.RollbackLast(); err != nil {
+				return err
+			}
+		}
+	})
+}
+
+// Fresh drops every table and migrates again, under the migration lock.
 func Fresh(db *gorm.DB) error {
-	if err := DropAllTables(db); err != nil {
-		return err
-	}
-	return Up(db)
+	return WithMigrationLock(db, func() error {
+		if err := DropAllTables(db); err != nil {
+			return err
+		}
+		if len(Migrations()) == 0 {
+			return nil
+		}
+		return Migrator(db).Migrate()
+	})
 }
 
 type Status struct {
@@ -118,18 +165,24 @@ func StatusList(db *gorm.DB) ([]Status, error) {
 }
 
 func Pending(db *gorm.DB) (int, error) {
+	ids, err := PendingIDs(db)
+	return len(ids), err
+}
+
+// PendingIDs lists the migrations not applied yet, in the order they would run.
+func PendingIDs(db *gorm.DB) ([]string, error) {
 	statuses, err := StatusList(db)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	count := 0
+	ids := []string{}
 	for _, status := range statuses {
 		if !status.Applied {
-			count++
+			ids = append(ids, status.ID)
 		}
 	}
-	return count, nil
+	return ids, nil
 }
 
 func DropAllTables(db *gorm.DB) error {

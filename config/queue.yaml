@@ -1,4 +1,21 @@
 queues: ${QUEUE_NAMES:-default}
 concurrency: ${QUEUE_CONCURRENCY:-4}
 poll: ${QUEUE_POLL:-1s}
+
+# A running job refreshes its claim every `heartbeat`. Once its heartbeat is
+# older than `stuck_after`, its worker is presumed dead and the job runs again
+# (that counts as an attempt; past max tries it goes to failed).
 stuck_after: ${QUEUE_STUCK_AFTER:-5m}
+heartbeat: ${QUEUE_HEARTBEAT:-30s}
+
+# Default bound of one attempt, for jobs dispatched without a Timeout. It must
+# stay below stuck_after.
+timeout: ${QUEUE_TIMEOUT:-2m}
+
+# On SIGTERM the worker stops claiming and lets running jobs finish for this
+# long, then cancels them and puts them back in the queue.
+shutdown_timeout: ${QUEUE_SHUTDOWN_TIMEOUT:-30s}
+
+# Serve this worker's Prometheus metrics (job counters, queue depth) on
+# this address, for example :9090. Empty disables it.
+metrics_addr: ${QUEUE_METRICS_ADDR:-}

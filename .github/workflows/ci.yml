@@ -106,6 +106,13 @@ jobs:
           go run ./cmd/omega migrate:reset
           go run ./cmd/omega migrate
 
+      # Row locks, SKIP LOCKED, advisory locks and transactional DDL only exist
+      # on the real engine: these tests skip without the DSN.
+      - name: Queue, scheduler and migrations on PostgreSQL
+        env:
+          OMEGA_TEST_POSTGRES_DSN: host=127.0.0.1 port=5432 user=omega password=secret dbname=omega sslmode=disable
+        run: go test -race -count=1 ./internal/queue/... ./internal/scheduler/... ./internal/database/...
+
   web:
     name: Interface (${{ matrix.stack }})
     runs-on: ubuntu-latest

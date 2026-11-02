@@ -85,7 +85,7 @@ func TestReclaimReturnsStaleRunningJobsToPending(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reclaimed, err := store.Reclaim(ctx, time.Now().Add(-time.Minute))
+	reclaimed, _, err := store.Reclaim(ctx, time.Now().Add(-time.Minute))
 	if err != nil {
 		t.Fatalf("Reclaim: %v", err)
 	}

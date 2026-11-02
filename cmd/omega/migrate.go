@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -30,39 +31,74 @@ func withDB(fn func(app *omega.App) error) error {
 	return fn(app)
 }
 
+// forceFlag adds the --force flag every destructive command takes. There is
+// no -f shortcut on purpose: it must be typed.
+func forceFlag(cmd *cobra.Command, force *bool) {
+	cmd.Flags().BoolVar(force, "force", false, "run even when APP_ENV is production")
+}
+
+func guard(app *omega.App, command string, force bool) error {
+	return database.GuardDestructive(app.Cfg.Env(), command, force)
+}
+
 func migrateCmd() *cobra.Command {
-	return &cobra.Command{
+	var pretend bool
+
+	cmd := &cobra.Command{
 		Use:   "migrate",
 		Short: "Run the pending migrations",
+		Long: "Concurrent runs (two replicas deploying together) are serialised by a\n" +
+			"database lock: the second waits, then finds nothing left to do.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withDB(func(app *omega.App) error {
-				pending, err := database.Pending(app.DB)
-				if err != nil {
-					return err
-				}
-				if pending == 0 {
-					fmt.Println("nothing to migrate")
+				if pretend {
+					pending, err := database.PendingIDs(app.DB)
+					if err != nil {
+						return err
+					}
+					if len(pending) == 0 {
+						fmt.Println("nothing to migrate")
+						return nil
+					}
+					fmt.Printf("%d migration(s) would run:\n", len(pending))
+					for _, id := range pending {
+						fmt.Println("  ", id)
+					}
 					return nil
 				}
 
-				if err := database.Up(app.DB); err != nil {
+				applied, err := database.Migrate(app.DB)
+				if err != nil {
 					return err
 				}
-				fmt.Printf("migrated %d migration(s)\n", pending)
+				if applied == 0 {
+					fmt.Println("nothing to migrate")
+					return nil
+				}
+				fmt.Printf("migrated %d migration(s)\n", applied)
 				return nil
 			})
 		},
 	}
+
+	cmd.Flags().BoolVar(&pretend, "pretend", false, "list the pending migrations without running them")
+	return cmd
 }
 
 func migrateRollbackCmd() *cobra.Command {
-	var steps int
+	var (
+		steps int
+		force bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "migrate:rollback",
 		Short: "Roll back the last migration",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withDB(func(app *omega.App) error {
+				if err := guard(app, "migrate:rollback", force); err != nil {
+					return err
+				}
 				for i := 0; i < steps; i++ {
 					applied, err := database.Applied(app.DB)
 					if err != nil {
@@ -83,15 +119,21 @@ func migrateRollbackCmd() *cobra.Command {
 	}
 
 	cmd.Flags().IntVar(&steps, "step", 1, "number of migrations to roll back")
+	forceFlag(cmd, &force)
 	return cmd
 }
 
 func migrateResetCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+
+	cmd := &cobra.Command{
 		Use:   "migrate:reset",
 		Short: "Roll back every migration",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withDB(func(app *omega.App) error {
+				if err := guard(app, "migrate:reset", force); err != nil {
+					return err
+				}
 				if err := database.Reset(app.DB); err != nil {
 					return err
 				}
@@ -100,10 +142,13 @@ func migrateResetCmd() *cobra.Command {
 			})
 		},
 	}
+
+	forceFlag(cmd, &force)
+	return cmd
 }
 
 func migrateFreshCmd() *cobra.Command {
-	var withSeed bool
+	var withSeed, force bool
 
 	cmd := &cobra.Command{
 		Use:   "migrate:fresh",
@@ -112,6 +157,9 @@ func migrateFreshCmd() *cobra.Command {
 			"half-written migration cannot block it.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withDB(func(app *omega.App) error {
+				if err := guard(app, "migrate:fresh", force); err != nil {
+					return err
+				}
 				if err := database.Fresh(app.DB); err != nil {
 					return err
 				}
@@ -129,6 +177,7 @@ func migrateFreshCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&withSeed, "seed", false, "run the seeders afterwards")
+	forceFlag(cmd, &force)
 	return cmd
 }
 
@@ -161,11 +210,16 @@ func migrateStatusCmd() *cobra.Command {
 }
 
 func seedCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+
+	cmd := &cobra.Command{
 		Use:   "db:seed [seeder...]",
 		Short: "Run the seeders",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withDB(func(app *omega.App) error {
+				if err := guard(app, "db:seed", force); err != nil {
+					return err
+				}
 				if err := database.Seed(app.DB, args...); err != nil {
 					return err
 				}
@@ -179,4 +233,38 @@ func seedCmd() *cobra.Command {
 			})
 		},
 	}
+
+	forceFlag(cmd, &force)
+	return cmd
+}
+
+// ensureMigrated is checked by serve: an API whose schema is behind its code
+// fails in confusing ways (a missing column on the first request). With
+// database.require_migrated (default: true in production) it refuses to
+// start; otherwise it warns.
+func ensureMigrated(app *omega.App) error {
+	if app.DB == nil {
+		return nil
+	}
+
+	pending, err := database.PendingIDs(app.DB)
+	if err != nil {
+		return fmt.Errorf("checking the migrations: %w", err)
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	required := app.Cfg.Env() == "production"
+	if raw := strings.TrimSpace(app.Cfg.String("database.require_migrated")); raw != "" {
+		required = app.Cfg.Bool("database.require_migrated")
+	}
+	if required {
+		return fmt.Errorf("%d migration(s) pending (%s): run omega migrate first, or set DB_REQUIRE_MIGRATED=false",
+			len(pending), strings.Join(pending, ", "))
+	}
+
+	app.Log.Warn().Strs("pending", pending).
+		Msg("migrations are pending: run omega migrate, the API may fail on the missing schema")
+	return nil
 }
