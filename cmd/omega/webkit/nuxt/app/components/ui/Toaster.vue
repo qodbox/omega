@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleCheckIcon, InfoIcon, OctagonXIcon, XIcon } from 'lucide-vue-next'
+import { CircleCheckIcon, InfoIcon, OctagonXIcon, XIcon } from '@lucide/vue'
 
 const { toasts, dismiss } = useToast()
 

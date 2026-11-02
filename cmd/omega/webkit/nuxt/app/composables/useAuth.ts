@@ -1,43 +1,30 @@
-import { api, readTokens, subscribe, writeTokens, type User } from '~/lib/api'
+import { api, restoreSession, subscribe, type User } from '~/lib/api'
 
 const user = ref<User | null>(null)
 const ready = ref(false)
+let wired = false
 
 export function useAuth() {
-  // Same client, same storage, same token rotation as the other stacks:
-  // only the way state is made reactive differs.
-  async function resolve() {
-    if (!readTokens()) {
-      user.value = null
-      ready.value = true
-      return
+  // Same client, same cookies, same rotation as the other stacks: only the
+  // way state is made reactive differs.
+  async function restore() {
+    if (import.meta.client && !wired) {
+      wired = true
+      // Sign-in, sign-out and other tabs all go through the shared client.
+      subscribe((next) => { user.value = next })
     }
+    if (ready.value) return
 
-    user.value = await api.me().then(answer => answer.data).catch(() => null)
-    if (!user.value) writeTokens(null)
+    user.value = await restoreSession()
     ready.value = true
   }
 
-  async function restore() {
-    if (ready.value) return
-    await resolve()
-
-    if (import.meta.client) {
-      subscribe(() => { void resolve() })
-      window.addEventListener('storage', () => { void resolve() })
-    }
-  }
-
   async function signIn(email: string, password: string) {
-    const answer = await api.login(email, password)
-    writeTokens(answer.tokens)
-    user.value = answer.data
+    user.value = await api.login(email, password)
   }
 
   async function signUp(name: string, email: string, password: string) {
-    const answer = await api.register(name, email, password)
-    writeTokens(answer.tokens)
-    user.value = answer.data
+    user.value = await api.register(name, email, password)
   }
 
   async function signOut() {

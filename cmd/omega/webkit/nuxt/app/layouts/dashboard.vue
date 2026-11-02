@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PanelLeftIcon } from 'lucide-vue-next'
+import { PanelLeftIcon } from '@lucide/vue'
 
 const { t } = useI18n()
 const route = useRoute()

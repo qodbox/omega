@@ -238,7 +238,8 @@
         "r3c1": "retirar el refresh token",
         "r4c1": "el portador del token",
         "r5c1": "cambiarla, cerrando las demás sesiones",
-        "r6c1": "iniciar una conexión OAuth"
+        "r6c1": "iniciar una conexión OAuth",
+        "r7c1": "fijar la cookie CSRF, llamada una vez al arrancar"
       },
       "b1": {
         "heading": "Un refresh token es de un solo uso",
@@ -249,6 +250,10 @@
       },
       "b3": {
         "heading": "Proteger una ruta"
+      },
+      "b4": {
+        "heading": "En el navegador, la sesión es una cookie",
+        "body": "Esta interfaz nunca ve un token: el servidor los fija como cookies HttpOnly, así que un script inyectado no tiene nada que robar. Los métodos no seguros devuelven la cookie legible omega_csrf en X-CSRF-Token. Los clientes de API que envían Authorization: Bearer conservan el par de tokens en el cuerpo y no pasan por el control CSRF."
       }
     },
     "validation": {
@@ -429,7 +434,7 @@
         "heading": "El refresco que nadie ve"
       },
       "b3": {
-        "body": "Un token de acceso caducado es el caso normal, no un fallo: se rota una vez y se repite la petición. Solo un refresh token también muerto termina la sesión. Hay una sola rotación en vuelo a la vez, aunque fallen diez peticiones juntas."
+        "body": "Una cookie de acceso caducada es el caso normal, no un fallo: se rota una vez y se repite. Solo una cookie de refresco también muerta termina la sesión, y todas las demás pestañas se enteran. Hay una sola rotación en curso a la vez, aunque diez peticiones fallen juntas."
       }
     },
     "i18n": {

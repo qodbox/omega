@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronLeftIcon, ChevronRightIcon, ListIcon } from 'lucide-vue-next'
+import { ChevronLeftIcon, ChevronRightIcon, ListIcon } from '@lucide/vue'
 import { docs, sections } from '~/lib/docs'
 
 const { t, loadDocs } = useI18n()

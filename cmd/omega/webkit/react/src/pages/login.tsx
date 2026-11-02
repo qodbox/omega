@@ -9,7 +9,7 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ApiError } from "@/lib/api"
+import { ApiError, safeNext } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { notifyError, notifySuccess } from "@/lib/notify"
 
@@ -27,7 +27,8 @@ export function LoginPage() {
     try {
       await action()
       notifySuccess(t(success))
-      void navigate("/dashboard")
+      // ?next= is attacker-controlled: only a same-origin path is followed.
+      void navigate(safeNext(new URLSearchParams(window.location.search).get("next")), { replace: true })
     } catch (failure) {
       if (failure instanceof ApiError && failure.fields) setFields(failure.fields)
       notifyError(failure)

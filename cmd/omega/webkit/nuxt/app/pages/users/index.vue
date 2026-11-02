@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, XIcon } from 'lucide-vue-next'
+import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, XIcon } from '@lucide/vue'
 import { api } from '~/lib/api'
 
 definePageMeta({ layout: 'dashboard', middleware: 'auth' })

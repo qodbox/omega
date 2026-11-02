@@ -145,10 +145,154 @@ func TestTheSharedClientCarriesTheWholeAuthFlow(t *testing.T) {
 	body := string(raw)
 	for _, piece := range []string{
 		"/auth/login", "/auth/register", "/auth/refresh", "/auth/logout", "/auth/me",
-		"omega.tokens", "Bearer ", "subscribe", "ApiError",
+		"/auth/csrf", `credentials: "include"`, "omega_csrf", "X-CSRF-Token",
+		"BroadcastChannel", "omega-auth", "withCredentials: true",
+		"subscribe", "ApiError", "safeNext",
 	} {
 		if !strings.Contains(body, piece) {
 			t.Errorf("le client partage n'implemente pas %q", piece)
+		}
+	}
+}
+
+func TestNoTokenEverReachesJavaScriptStorage(t *testing.T) {
+	// The session lives in HttpOnly cookies: anything an injected script can
+	// read, it can steal.
+	raw, err := webkit.ReadFile("webkit/shared/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"localStorage", "sessionStorage", "Authorization", "access_token", "refresh_token",
+	} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("le client partage manipule encore %q", forbidden)
+		}
+	}
+
+	err = fs.WalkDir(webkit, "webkit", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || strings.HasSuffix(path, "api-types.ts") {
+			return err
+		}
+		body, readErr := webkit.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		for _, forbidden := range []string{"readTokens", "writeTokens", "omega.tokens", "?token=", "&token="} {
+			if strings.Contains(string(body), forbidden) {
+				t.Errorf("%s: %q, un jeton lisible depuis JavaScript", path, forbidden)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNoTemplateRendersRawHtml(t *testing.T) {
+	err := fs.WalkDir(webkit, "webkit", func(path string, entry fs.DirEntry, err error) error {
+		// Source files only: the READMEs name what is forbidden.
+		if err != nil || entry.IsDir() || !strings.Contains(".ts .tsx .vue .html", filepath.Ext(path)) {
+			return err
+		}
+		body, readErr := webkit.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		for _, forbidden := range []string{"dangerouslySetInnerHTML", "v-html", ".innerHTML"} {
+			if strings.Contains(string(body), forbidden) {
+				t.Errorf("%s: %q ouvre la porte a une injection", path, forbidden)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEveryStackSendsSecurityHeaders(t *testing.T) {
+	policy, err := webkit.ReadFile("webkit/shared/security.ts")
+	if err != nil {
+		t.Fatalf("politique partagee absente: %v", err)
+	}
+	for _, piece := range []string{
+		"frame-ancestors", "'none'", "object-src", "base-uri",
+		"X-Content-Type-Options", "nosniff", "strict-origin-when-cross-origin", "Permissions-Policy",
+	} {
+		if !strings.Contains(string(policy), piece) {
+			t.Errorf("la politique partagee ne porte pas %q", piece)
+		}
+	}
+
+	wiring := map[string]map[string][]string{
+		"nuxt": {
+			"nuxt.config.ts":        {"routeRules", "securityHeaders"},
+			"server/plugins/csp.ts": {"contentSecurityPolicy", "sha256"},
+		},
+		"react": {
+			"vite.config.ts": {"Content-Security-Policy", "securityHeaders", `apply: "build"`},
+			"README.md":      {"frame-ancestors"},
+		},
+		"next": {
+			"next.config.ts": {"headers()", "securityHeaders"},
+			"proxy.ts":       {"nonce", "contentSecurityPolicy"},
+		},
+	}
+
+	for _, target := range stacks {
+		if _, mapped := target.shared["security.ts"]; !mapped {
+			t.Errorf("%s ne recoit pas la politique partagee", target.name)
+		}
+		for file, markers := range wiring[target.name] {
+			raw, err := webkit.ReadFile("webkit/" + target.name + "/" + file)
+			if err != nil {
+				t.Errorf("%s: %s introuvable", target.name, file)
+				continue
+			}
+			for _, marker := range markers {
+				if !strings.Contains(string(raw), marker) {
+					t.Errorf("%s: %s ne porte pas %q", target.name, file, marker)
+				}
+			}
+		}
+	}
+}
+
+func TestEveryStackInstallsReproducibly(t *testing.T) {
+	for _, target := range stacks {
+		raw, err := webkit.ReadFile("webkit/" + target.name + "/.npmrc")
+		if err != nil {
+			t.Errorf("%s: .npmrc manquant", target.name)
+			continue
+		}
+		for _, setting := range []string{"ignore-scripts=true", "save-exact=true"} {
+			if !strings.Contains(string(raw), setting) {
+				t.Errorf("%s: .npmrc sans %s", target.name, setting)
+			}
+		}
+
+		manifest, err := webkit.ReadFile("webkit/" + target.name + "/package.json")
+		if err != nil {
+			t.Errorf("%s: package.json manquant", target.name)
+			continue
+		}
+		var pkg struct {
+			Dependencies    map[string]string `json:"dependencies"`
+			DevDependencies map[string]string `json:"devDependencies"`
+		}
+		if err := json.Unmarshal(manifest, &pkg); err != nil {
+			t.Errorf("%s: package.json illisible: %v", target.name, err)
+			continue
+		}
+		for _, deps := range []map[string]string{pkg.Dependencies, pkg.DevDependencies} {
+			for name, version := range deps {
+				// A range resolves differently from one scaffold to the next.
+				if strings.ContainsAny(version, "^~<>=*| ") || strings.Contains(version, "-") {
+					t.Errorf("%s: %s@%s n'est pas une version stable exacte", target.name, name, version)
+				}
+			}
 		}
 	}
 }

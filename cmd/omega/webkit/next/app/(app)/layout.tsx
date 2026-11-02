@@ -21,8 +21,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login")
-  }, [loading, user, router])
+    if (!loading && !user) router.replace(`/login?next=${encodeURIComponent(pathname)}`)
+  }, [loading, user, router, pathname])
 
   if (loading || !user) {
     return (
